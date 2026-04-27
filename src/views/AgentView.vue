@@ -1,52 +1,57 @@
 <template>
-  <div class="gemini-layout">
-    <div class="sidebar">
-      <div class="menu-icon">≡</div>
-      <div class="new-chat-icon">+</div>
-    </div>
-
-    <div class="main-content">
-      <div class="header">
+  <div class="workspace-layout">
+    
+    <div class="agent-pane">
+      <div class="pane-header left-header">
         <div class="title">Tech-Brain Agent</div>
-        <div class="user-avatar">U</div>
       </div>
 
       <div class="chat-body" ref="chatBodyRef">
-        <div class="content-limit">
-          <div v-for="(msg, index) in messages" :key="index" class="msg-row">
-            <div class="avatar" v-if="msg.role === 'ai'">✨</div>
-            
-            <div class="msg-content" :class="msg.role">
-              {{ msg.content }}
-            </div>
+        <div v-for="(msg, index) in messages" :key="index" class="msg-row">
+          <div class="avatar" v-if="msg.role === 'ai'">✨</div>
+          <div class="msg-content" :class="msg.role">
+            {{ msg.content }}
           </div>
         </div>
       </div>
 
       <div class="input-dock">
-        <div class="input-content-limit">
-          <div class="gemini-input-wrapper">
-            <div class="input-actions-left">
-              <span class="icon-btn">+</span>
-            </div>
-            
-            <textarea 
-              v-model="userInput"
-              placeholder="输入给 Tech-Brain 的指令..."
-              class="custom-textarea"
-              rows="1"
-              @keydown.enter.prevent="handleSend"
-            ></textarea>
-            
-            <div class="input-actions-right">
-              <span class="model-selector">Pro ⌄</span>
-              <button class="send-btn" @click="handleSend">➤</button>
-            </div>
+        <div class="gemini-input-wrapper">
+          <textarea 
+            v-model="userInput"
+            placeholder="输入给 Tech-Brain 的指令..."
+            class="custom-textarea"
+            rows="1"
+            @keydown.enter.prevent="handleSend"
+          ></textarea>
+          
+          <div class="input-actions-right">
+            <!-- <span class="model-selector">Pro ⌄</span> -->
+            <button class="send-btn" @click="handleSend">➤</button>
           </div>
-          <div class="footer-text">Tech-Brain 是一款 AI Agent 工具，其回答未必正确无误。</div>
+        </div>
+        <div class="footer-text">Tech-Brain Agent · RAG 增强模式</div>
+      </div>
+    </div>
+
+    <div class="extension-pane">
+      <div class="pane-header right-header">
+        <div class="header-actions">
+          <span class="icon-btn" title="菜单">≡</span>
+          <span class="icon-btn" title="新建对话">+</span>
+        </div>
+        <div class="user-avatar">U</div>
+      </div>
+
+      <div class="extension-content">
+        <div class="placeholder-box">
+          <h2>📚 知识库与扩展模块区</h2>
+          <p>这里将用来嵌入你的 Notes 笔记管理表格，以及未来的其他组件。</p>
+          <p>（后续可以通过 Vue 的组件引入功能，把 NotesView.vue 直接嵌入到这里）</p>
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -57,8 +62,8 @@ const userInput = ref('')
 const chatBodyRef = ref(null)
 
 const messages = ref([
-  { role: 'user', content: '欢迎回来，哥哥' },
-  { role: 'ai', content: '我是你的小助手，请问有什么我可以帮你的吗？'}
+  { role: 'user', content: '测试左3右7分栏布局' },
+  { role: 'ai', content: '布局已更新。左侧占比 30% 用于独立对话，右侧占比 70% 用于知识库管理。' }
 ])
 
 const handleSend = async () => {
@@ -69,9 +74,8 @@ const handleSend = async () => {
   userInput.value = ''
   await scrollToBottom()
 
-  // 模拟接口调用延迟
   setTimeout(async () => {
-    messages.value.push({ role: 'ai', content: `收到指令：${text}。等待后端 /api/chat 接口联调。` })
+    messages.value.push({ role: 'ai', content: `收到指令：${text}。` })
     await scrollToBottom()
   }, 800)
 }
@@ -85,42 +89,145 @@ const scrollToBottom = async () => {
 </script>
 
 <style scoped>
-.gemini-layout {
+/* 整体工作台布局 */
+.workspace-layout {
   display: flex;
   height: 100vh;
+  width: 100vw;
   background-color: #131314;
+  color: #e3e3e3;
+  overflow: hidden; /* 防止出现全局滚动条 */
 }
 
-/* 简易侧边栏 */
-.sidebar {
-  width: 60px;
-  background-color: #1e1f20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 20px;
-  gap: 30px;
-  color: #c4c7c5;
-  font-size: 24px;
-  cursor: pointer;
-}
-
-.main-content {
-  flex: 1;
+/* ================= 左侧 Agent 区 ================= */
+.agent-pane {
+  flex: 3; /* 核心：占据 3 份宽度 */
+  background-color: #1e1f20; /* 左侧底色稍微提亮，与右侧区分 */
+  border-right: 1px solid #333; /* 分割线 */
   display: flex;
   flex-direction: column;
   position: relative;
 }
 
-/* 顶部标题 */
-.header {
+.pane-header {
   height: 60px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: 0 20px;
+}
+
+.left-header {
+  border-bottom: 1px solid #333;
+  font-weight: bold;
+}
+
+.chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  padding-bottom: 120px; /* 给输入框留空间 */
+}
+
+.msg-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 30px;
+  align-items: flex-start;
+}
+
+.avatar {
+  font-size: 20px;
+}
+
+.msg-content {
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  width: 100%;
+}
+
+.msg-content.user {
+  text-align: right;
+  color: #c4c7c5;
+}
+
+.input-dock {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(180deg, transparent, #1e1f20 30%);
+  padding: 15px;
+  box-sizing: border-box;
+}
+
+.gemini-input-wrapper {
+  background-color: #2a2b2c;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  gap: 10px;
+}
+
+.custom-textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #e3e3e3;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+}
+
+.input-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-selector {
+  color: #c4c7c5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.send-btn {
+  background: transparent;
+  border: none;
   color: #e3e3e3;
   font-size: 18px;
+  cursor: pointer;
+}
+
+.footer-text {
+  text-align: center;
+  font-size: 12px;
+  color: #8e8e8e;
+  margin-top: 10px;
+}
+
+/* ================= 右侧 扩展区 ================= */
+.extension-pane {
+  flex: 7; /* 核心：占据 7 份宽度 */
+  background-color: #131314;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-header {
+  justify-content: space-between; /* 元素两端对齐 */
+  border-bottom: 1px solid #333;
+}
+
+.header-actions {
+  display: flex;
+  gap: 20px;
+}
+
+.icon-btn {
+  font-size: 24px;
+  color: #c4c7c5;
+  cursor: pointer;
 }
 
 .user-avatar {
@@ -133,116 +240,22 @@ const scrollToBottom = async () => {
   font-size: 14px;
 }
 
-/* 聊天主体 */
-.chat-body {
+.extension-content {
   flex: 1;
-  overflow-y: auto;
-  padding-bottom: 150px; /* 给底部留空间 */
-}
-
-.content-limit {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.msg-row {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 40px;
-  align-items: flex-start;
-}
-
-.avatar {
-  font-size: 24px;
-}
-
-.msg-content {
-  font-size: 16px;
-  line-height: 1.6;
-  color: #e3e3e3;
-  white-space: pre-wrap;
-  width: 100%;
-}
-
-.msg-content.user {
-  text-align: right; /* Gemini默认用户消息靠右或无头像 */
-  color: #c4c7c5;
-}
-
-/* 底部输入框 */
-.input-dock {
-  position: absolute;
-  bottom: 0;
-  width: 100%;
-  background: linear-gradient(180deg, transparent, #131314 30%);
+  padding: 30px;
   display: flex;
   justify-content: center;
-  padding-bottom: 10px;
-}
-
-.input-content-limit {
-  max-width: 800px;
-  width: 100%;
-  padding: 0 20px;
-}
-
-.gemini-input-wrapper {
-  background-color: #1e1f20;
-  border-radius: 30px;
-  display: flex;
   align-items: center;
-  padding: 12px 20px;
-  gap: 15px;
 }
 
-.icon-btn {
-  font-size: 24px;
-  color: #c4c7c5;
-  cursor: pointer;
-}
-
-.custom-textarea {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: #e3e3e3;
-  font-size: 16px;
-  resize: none;
-  outline: none;
-  font-family: inherit;
-  padding: 5px 0;
-}
-
-.custom-textarea::placeholder {
-  color: #8e8e8e;
-}
-
-.input-actions-right {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.model-selector {
-  color: #c4c7c5;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.send-btn {
-  background: transparent;
-  border: none;
-  color: #e3e3e3;
-  font-size: 20px;
-  cursor: pointer;
-  padding: 0;
-}
-
-.footer-text {
+/* 临时占位框样式 */
+.placeholder-box {
+  border: 2px dashed #444;
+  border-radius: 12px;
+  padding: 40px;
   text-align: center;
-  font-size: 12px;
   color: #8e8e8e;
-  margin-top: 15px;
+  width: 80%;
+  max-width: 600px;
 }
 </style>
