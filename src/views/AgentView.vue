@@ -9,8 +9,11 @@
       <div class="chat-body" ref="chatBodyRef">
         <div v-for="(msg, index) in messages" :key="index" class="msg-row">
           <div class="avatar" v-if="msg.role === 'ai'">✨</div>
-          <div class="msg-content" :class="msg.role">
-            {{ msg.content }}
+
+        <!-- 使用 v-html 指令注入解析后的 HTML -->
+          <div class="msg-content markdown-body" :class="msg.role">
+          <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+          <div v-else v-html="parseMarkdown(msg.content)"></div>
           </div>
         </div>
       </div>
@@ -72,6 +75,14 @@ import { ref, nextTick, onMounted } from 'vue'
 import { Sunny, Moon } from '@element-plus/icons-vue'
 import axios from 'axios' // 引入 HTTP 客户端
 
+import { marked } from 'marked'
+
+// 新增解析函数
+const parseMarkdown = (text) => {
+  if (!text) return ''
+  return marked(text)
+}
+
 // ================= 主题切换逻辑 =================
 const isDark = ref(true)
 
@@ -105,7 +116,7 @@ const chatBodyRef = ref(null)
 const isLoading = ref(false) // 新增：请求发送状态，防止重复连击
 
 const messages = ref([
-  { role: 'ai', content: '系统初始化完成。后端网络链路已就绪。请下达指令。' }
+  { role: 'ai', content: '哥哥，我是你的小助理02，请下达指令吧，我什么都会做的' }
 ])
 
 const handleSend = async () => {
@@ -400,5 +411,49 @@ const scrollToBottom = async () => {
 
 .placeholder-box h2 {
   color: var(--tb-color-text-primary);
+}
+
+/* ================= Markdown 富文本样式 ================= */
+:deep(.markdown-body p) {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+:deep(.markdown-body strong) {
+  font-weight: 600;
+  color: var(--tb-color-primary); /* 让加粗的文字带点主题色，更醒目 */
+}
+
+:deep(.markdown-body ul), :deep(.markdown-body ol) {
+  margin-top: 0;
+  margin-bottom: 10px;
+  padding-left: 20px;
+}
+
+:deep(.markdown-body li) {
+  margin-bottom: 5px;
+}
+
+:deep(.markdown-body hr) {
+  border: 0;
+  border-top: 1px solid var(--tb-color-border);
+  margin: 15px 0;
+}
+
+/* 简单的代码块样式预留 */
+:deep(.markdown-body pre), :deep(.markdown-body code) {
+  background-color: var(--tb-color-bg-input);
+  border-radius: 4px;
+  font-family: monospace;
+}
+:deep(.markdown-body code) {
+  padding: 2px 4px;
+  color: #e83e8c;
+}
+:deep(.markdown-body pre code) {
+  padding: 10px;
+  display: block;
+  color: var(--tb-color-text-primary);
+  overflow-x: auto;
 }
 </style>
