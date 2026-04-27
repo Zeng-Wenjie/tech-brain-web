@@ -26,7 +26,7 @@
           ></textarea>
           
           <div class="input-actions-right">
-            <span class="model-selector">Pro ⌄</span>
+            <!-- <span class="model-selector">Pro ⌄</span> -->
             <button class="send-btn" @click="handleSend">➤</button>
           </div>
         </div>
@@ -69,19 +69,17 @@
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
-// 引入 Element Plus 的图标组件
 import { Sunny, Moon } from '@element-plus/icons-vue'
+import axios from 'axios' // 引入 HTTP 客户端
 
-// 1. 主题切换逻辑
-const isDark = ref(true) // 默认是暗黑模式
+// ================= 主题切换逻辑 =================
+const isDark = ref(true)
 
-// 组件挂载时，检查本地存储或系统偏好
 onMounted(() => {
   const savedTheme = localStorage.getItem('tech-brain-theme')
   if (savedTheme) {
     isDark.value = savedTheme === 'dark'
   } else {
-    // 如果没有保存过，检查系统是否偏好亮色
     isDark.value = !window.matchMedia('(prefers-color-scheme: light)').matches
   }
   updateBodyClass()
@@ -89,12 +87,10 @@ onMounted(() => {
 
 const toggleTheme = () => {
   isDark.value = !isDark.value
-  // 保存用户偏好到本地
   localStorage.setItem('tech-brain-theme', isDark.value ? 'dark' : 'light')
   updateBodyClass()
 }
 
-// 核心：操作 DOM，给 body 添加或移除 .light 类
 const updateBodyClass = () => {
   if (isDark.value) {
     document.body.classList.remove('light')
@@ -103,27 +99,60 @@ const updateBodyClass = () => {
   }
 }
 
-
-// 2. 原有的对话逻辑
+// ================= 核心：Agent 对话交互逻辑 =================
 const userInput = ref('')
 const chatBodyRef = ref(null)
+const isLoading = ref(false) // 新增：请求发送状态，防止重复连击
 
 const messages = ref([
-  { role: 'user', content: '测试黑白主题切换功能' },
-  { role: 'ai', content: '点击右上角头像左侧的太阳/月亮图标即可切换。布局颜色已全部替换为 CSS 变量，完美支持双色模式。' }
+  { role: 'ai', content: '系统初始化完成。后端网络链路已就绪。请下达指令。' }
 ])
 
 const handleSend = async () => {
-  if (!userInput.value.trim()) return
+  const text = userInput.value.trim()
+  if (!text || isLoading.value) return // 为空或正在请求时直接拦截
 
-  messages.value.push({ role: 'user', content: userInput.value })
+  // 1. 用户消息上屏
+  messages.value.push({ role: 'user', content: text })
   userInput.value = ''
   await scrollToBottom()
 
-  setTimeout(async () => {
-    messages.value.push({ role: 'ai', content: `收到。当前模式：${isDark.value ? '暗黑' : '亮色'}。` })
+  // 2. 进入等待状态，给出思考提示
+  isLoading.value = true
+  messages.value.push({ role: 'ai', content: 'Tech-Brain 正在思考...' })
+  await scrollToBottom()
+
+  try {
+    // 3. 发送真实请求 (根据之前的截图，使用 query 参数 msg)
+    const response = await axios.get('/api/chat', {
+      params: { msg: text }
+    })
+
+    // 移除“思考中”的占位消息
+    messages.value.pop()
+
+    // 4. 解析后端返回的标准 Result 结构
+    // 假设后端返回的是 { code: 200, data: "...", message: "..." }
+    if (response.data && response.data.code === 200) {
+      messages.value.push({ role: 'ai', content: response.data.data })
+    } else {
+      messages.value.push({ 
+        role: 'ai', 
+        content: `调用异常：${response.data.message || '后端返回非200状态码'}` 
+      })
+    }
+  } catch (error) {
+    // 处理网络崩溃或代理失败的情况
+    messages.value.pop()
+    messages.value.push({ 
+      role: 'ai', 
+      content: `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}` 
+    })
+  } finally {
+    // 5. 释放状态
+    isLoading.value = false
     await scrollToBottom()
-  }, 800)
+  }
 }
 
 const scrollToBottom = async () => {
