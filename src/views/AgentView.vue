@@ -9,11 +9,9 @@
       <div class="chat-body" ref="chatBodyRef">
         <div v-for="(msg, index) in messages" :key="index" class="msg-row">
           <div class="avatar" v-if="msg.role === 'ai'">✨</div>
-
-        <!-- 使用 v-html 指令注入解析后的 HTML -->
           <div class="msg-content markdown-body" :class="msg.role">
-          <div v-if="msg.role === 'user'">{{ msg.content }}</div>
-          <div v-else v-html="parseMarkdown(msg.content)"></div>
+            <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+            <div v-else v-html="parseMarkdown(msg.content)"></div>
           </div>
         </div>
       </div>
@@ -29,7 +27,7 @@
           ></textarea>
           
           <div class="input-actions-right">
-            <!-- <span class="model-selector">Pro ⌄</span> -->
+            <span class="model-selector">保存</span>
             <button class="send-btn" @click="handleSend">➤</button>
           </div>
         </div>
@@ -38,10 +36,10 @@
     </div>
 
     <div class="extension-pane">
+      
       <div class="pane-header right-header">
         <div class="header-actions">
-          <span class="icon-btn" title="菜单">≡</span>
-          <span class="icon-btn" title="新建对话">+</span>
+          <span class="icon-btn" title="菜单" @click="isDrawerVisible = !isDrawerVisible">≡</span>
         </div>
         
         <div class="right-configs">
@@ -58,17 +56,38 @@
         </div>
       </div>
 
-      <div class="extension-content">
+      <div class="extension-content" style="position: relative; overflow: hidden;">
+        
+        <el-drawer
+          v-model="isDrawerVisible"
+          direction="ltr"
+          :with-header="false"
+          size="240px"
+          :append-to-body="false"
+          class="notes-drawer"
+        >
+          <div class="drawer-container">
+            <div class="drawer-section" style="margin-top: 20px;">
+              <div class="section-title">笔记本操作</div>
+              <div class="menu-item active"><span class="icon">📝</span> 全部笔记</div>
+              <div class="menu-item"><span class="icon">+</span> 新建笔记本</div>
+            </div>
+            
+            <div class="drawer-footer">
+              <div class="menu-item"><span class="icon">⚙</span> 设置和帮助</div>
+            </div>
+          </div>
+        </el-drawer>
+
         <div class="placeholder-box">
           <h2>📚 知识库与扩展模块区</h2>
           <p>当前主题：{{ isDark ? '暗黑模式' : '亮色模式' }}</p>
-          <p>测试背景色和文本色是否随着切换而改变。</p>
+          <p>抽屉现在乖乖待在 Header 下面了。</p>
         </div>
       </div>
     </div>
 
-  </div>
-</template>
+  </div> </template>
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
@@ -82,6 +101,9 @@ const parseMarkdown = (text) => {
   if (!text) return ''
   return marked(text)
 }
+
+// 控制侧边抽屉菜单的显示与隐藏
+const isDrawerVisible = ref(false)
 
 // ================= 主题切换逻辑 =================
 const isDark = ref(true)
@@ -116,7 +138,10 @@ const chatBodyRef = ref(null)
 const isLoading = ref(false) // 新增：请求发送状态，防止重复连击
 
 const messages = ref([
-  { role: 'ai', content: '哥哥，我是你的小助理02，请下达指令吧，我什么都会做的' }
+  { 
+    role: 'ai', 
+    content: '### ✨ 欢迎回来，哥哥！\n\n我是你的专属小助理 **02**' 
+  }
 ])
 
 const handleSend = async () => {
@@ -327,13 +352,12 @@ const scrollToBottom = async () => {
   opacity: 0.8;
 }
 
-/* ================= 右侧 扩展区 ================= */
+/* ================= 右侧扩展区基础 ================= */
 .extension-pane {
   flex: 7;
-  /* 应用变量：网页底色 */
   background-color: var(--tb-color-bg-page);
   display: flex;
-  flex-direction: column;
+  flex-direction: column; /* 恢复为纵向布局 */
   transition: background-color 0.3s ease;
 }
 
@@ -455,5 +479,88 @@ const scrollToBottom = async () => {
   display: block;
   color: var(--tb-color-text-primary);
   overflow-x: auto;
+}
+
+/* ================= 局部抽屉核心修复 ================= */
+/* 强制遮罩层使用绝对定位，使其完全贴合右侧父容器，不再参照全屏 */
+:deep(.el-overlay) {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 穿透修改抽屉本体样式以适应主题 */
+:deep(.notes-drawer) {
+  position: absolute !important;
+  background-color: var(--tb-color-bg-panel);
+  color: var(--tb-color-text-primary);
+}
+/* 去掉抽屉自带的内边距，方便我们自己画容器 */
+:deep(.el-drawer__body) {
+  padding: 0;
+}
+
+.drawer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 20px;
+  background-color: var(--tb-color-bg-panel);
+}
+
+.drawer-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.drawer-section {
+  margin-bottom: 25px;
+}
+
+.section-title {
+  font-size: 12px;
+  color: var(--tb-color-text-secondary);
+  font-weight: bold;
+  margin-bottom: 10px;
+  padding: 0 10px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--tb-color-text-primary);
+  transition: background-color 0.2s;
+  margin-bottom: 4px;
+}
+
+.menu-item:hover {
+  background-color: var(--tb-color-bg-input);
+}
+
+.menu-item.active {
+  background-color: #1a3c63; 
+  color: #e3e3e3;
+}
+.light .menu-item.active {
+  background-color: #d3e3fd; 
+  color: #041e49;
+}
+
+.menu-item .icon {
+  margin-right: 10px;
+  font-size: 16px;
+}
+
+.drawer-footer {
+  margin-top: auto; 
+  padding-bottom: 20px;
 }
 </style>
