@@ -79,19 +79,45 @@
           </div>
         </el-drawer>
 
-        <div class="placeholder-box">
-          <h2>📚 知识库与扩展模块区</h2>
-          <p>当前主题：{{ isDark ? '暗黑模式' : '亮色模式' }}</p>
-          <p>抽屉现在乖乖待在 Header 下面了。</p>
+<!-- 笔记区中心部分 -->
+        <div class="notes-workspace">
+          
+          <div class="cards-container">
+            <el-row :gutter="20">
+              <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
+                <el-card class="note-card" shadow="hover">
+                  <template #header>
+                    <div class="card-header">
+                      <span class="note-title">{{ note.title }}</span>
+                      <el-icon class="delete-icon" @click="deleteNote(note.id)"><Close /></el-icon>
+                    </div>
+                  </template>
+                  <div class="note-content">{{ note.content }}</div>
+                </el-card>
+              </el-col>
+            </el-row>
+          </div>
+
+          <div class="pagination-dock">
+            <el-pagination
+              v-model:current-page="currentPage"
+              :page-size="pageSize"
+              :total="totalNotes"
+              layout="prev, pager, next"
+              @current-change="handlePageChange"
+              background
+            />
+          </div>
+          
         </div>
       </div>
     </div>
-
-  </div> </template>
+  </div>
+   </template>
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
-import { Sunny, Moon } from '@element-plus/icons-vue'
+import { Sunny, Moon, Close } from '@element-plus/icons-vue'
 import axios from 'axios' // 引入 HTTP 客户端
 
 import { marked } from 'marked'
@@ -196,6 +222,29 @@ const scrollToBottom = async () => {
   if (chatBodyRef.value) {
     chatBodyRef.value.scrollTop = chatBodyRef.value.scrollHeight
   }
+}
+
+// ================= 知识库卡片与分页逻辑 =================
+const currentPage = ref(1)
+const pageSize = ref(9)
+const totalNotes = ref(45) // 模拟总数据量
+
+// 模拟一页 9 条数据
+const notesList = ref(Array.from({ length: 9 }).map((_, index) => ({
+  id: index + 1,
+  title: `Spring Boot 核心概念 ${index + 1}`,
+  content: `这是关于知识点 ${index + 1} 的详细笔记记录。主要包含了一些底层原理的解析，以及如何在实际的业务场景中去应用这些概念来实现高并发处理...`
+})))
+
+const handlePageChange = (val) => {
+  console.log(`前端触发分页查询，当前页: ${val}，后续这里将调用 Axios 请求后端的分页接口`)
+  // TODO: axios.get('/api/notes/page', { params: { page: val, size: pageSize.value } })
+}
+
+const deleteNote = (id) => {
+  console.log(`触发删除操作，笔记 ID: ${id}`)
+  // 模拟前端移除，后续对接后端删除接口
+  notesList.value = notesList.value.filter(note => note.id !== id)
 }
 </script>
 
@@ -562,5 +611,100 @@ const scrollToBottom = async () => {
 .drawer-footer {
   margin-top: auto; 
   padding-bottom: 20px;
+}
+
+/* ================= 知识库卡片区样式 ================= */
+.notes-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 30px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.cards-container {
+  flex: 1;
+  overflow-y: auto; /* 内容过多时仅卡片区滚动 */
+}
+
+/* 穿透修改 el-card，使其完美贴合暗黑/亮色主题 */
+:deep(.note-card) {
+  background-color: var(--tb-color-bg-panel);
+  border: 1px solid var(--tb-color-border);
+  color: var(--tb-color-text-primary);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+:deep(.note-card:hover) {
+  border-color: var(--tb-color-primary);
+}
+
+:deep(.el-card__header) {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--tb-color-border);
+}
+
+:deep(.el-card__body) {
+  padding: 15px;
+  height: 100px; /* 固定高度，保证一竖排对齐 */
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.note-title {
+  font-weight: bold;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* 标题过长显示省略号 */
+  max-width: 85%;
+}
+
+.delete-icon {
+  cursor: pointer;
+  color: var(--tb-color-text-secondary);
+  font-size: 16px;
+}
+
+.delete-icon:hover {
+  color: #f56c6c; /* 悬浮显示红色警示 */
+}
+
+.note-content {
+  font-size: 13px;
+  color: var(--tb-color-text-secondary);
+  line-height: 1.6;
+  /* 多行文本截断：最多显示4行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 底部动态分页停靠区 */
+.pagination-dock {
+  height: 50px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 10px;
+}
+
+/* 适配暗黑模式的分页器颜色穿透 */
+:deep(.el-pagination.is-background .btn-next),
+:deep(.el-pagination.is-background .btn-prev),
+:deep(.el-pagination.is-background .el-pager li) {
+  background-color: var(--tb-color-bg-panel);
+  color: var(--tb-color-text-primary);
+}
+:deep(.el-pagination.is-background .el-pager li.is-active) {
+  background-color: var(--tb-color-primary);
+  color: #fff;
 }
 </style>
