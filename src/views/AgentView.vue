@@ -80,12 +80,12 @@
         </el-drawer>
 
 <!-- 笔记区中心部分 -->
-       <div class="main-table-area" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+       <div class="notes-workspace" :style="{ padding: expandedNote ? '0' : '20px 30px' }" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
           
           <div class="notes-workspace">
             
             <template v-if="!expandedNote">
-              <div class="cards-container grid-scroll-area">
+              <div class="cards-container" style="flex: 1; overflow: hidden;">
                 <el-row :gutter="20" style="margin: 0;">
                   <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
                     <el-card class="note-card" shadow="hover" @dblclick="expandNote(note)">
@@ -253,7 +253,8 @@ const totalNotes = ref(45) // 模拟总数据量
 const notesList = ref(Array.from({ length: 9 }).map((_, index) => ({
   id: index + 1,
   title: `Spring Boot 核心概念 ${index + 1}`,
-  content: `这是关于知识点 ${index + 1} 的详细笔记记录。主要包含了一些底层原理的解析，以及如何在实际的业务场景中去应用这些概念来实现高并发处理...`
+  content: `这是关于 Spring Boot 知识点 ${index + 1} 的详细笔记记录。\n\n` + 
+           `测试滚动条测试滚动条测试滚动条测试滚动条测试滚动条\n`.repeat(50)
 })))
 
 const handlePageChange = (val) => {
@@ -764,51 +765,60 @@ const closeExpandedNote = () => {
 }
 
 /* ================= 大卡片铺满模式样式 ================= */
+/* 1. 放大后的外层大卡片：强制撑满 100% 空间 */
+.expanded-note-view, 
+/* ================= 大卡片铺满模式样式 ================= */
 .expanded-fullscreen-card {
   display: flex;
   flex-direction: column;
-  height: 100%; /* 100% 霸占绿色框高度 */
+  flex: 1;
+  height: 100%; 
   background-color: var(--tb-color-bg-panel);
-  border-radius: 10px;
-  border: 1px solid var(--tb-color-border);
+  /* 核心修改：去掉圆角和边框，真正融入背景铺满全局 */
+  border-radius: 0; 
+  border: none; 
   box-sizing: border-box;
   animation: fadeInCard 0.2s ease-out;
 }
 
-@keyframes fadeInCard {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.expanded-header {
-  display: flex;
-  align-items: center;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--tb-color-border);
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.expanded-title {
-  margin: 0;
-  font-size: 18px;
-  color: var(--tb-color-text-primary);
-}
-
-/* 核心：唯一允许出现滚动条的地方（你的红线） */
-.expanded-body {
-  flex: 1;
-  padding: 25px;
-  overflow-y: auto; 
+/* 2. 内部文本阅读区：撑开下方空间，并独占滚动条 */
+.expanded-content, 
+.expanded-body { /* 兼容你用的类名 */
+  flex: 1; /* 核心：把头部以下的空间全部撑满 */
+  padding: 30px;
+  overflow-y: auto; /* 核心：只有这里允许出现纵向滚动条 */
   overflow-x: hidden;
   color: var(--tb-color-text-primary);
   font-size: 15px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+/* ================= 专门美化放大卡片内的滚动条 ================= */
+/* 确保内容区真正拥有滚动权限 */
+.expanded-body {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto; /* 内容超出自动显示滚动条 */
+  overflow-x: hidden;
+}
+
+/* 针对 Webkit 浏览器（Chrome/Edge）的滚动条美化 */
+.expanded-body::-webkit-scrollbar {
+  width: 6px; /* 把原生的粗滚动条变成纤细的 6px */
+}
+
+.expanded-body::-webkit-scrollbar-track {
+  background: transparent; /* 轨道透明，完全融入背景 */
+}
+
+.expanded-body::-webkit-scrollbar-thumb {
+  background-color: var(--tb-color-border); /* 借用主题的边框颜色做滑块 */
+  border-radius: 4px; /* 让滑块变成圆润的胶囊状 */
+}
+
+.expanded-body::-webkit-scrollbar-thumb:hover {
+  background-color: var(--tb-color-text-secondary); /* 鼠标放上去变深一点 */
 }
 
 /* 其他的 .note-card, .delete-icon 等复用之前的即可 */
