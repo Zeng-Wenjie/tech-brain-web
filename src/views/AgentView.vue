@@ -80,44 +80,64 @@
         </el-drawer>
 
 <!-- 笔记区中心部分 -->
-        <div class="notes-workspace">
+       <div class="main-table-area" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
           
-          <div class="cards-container">
-            <el-row :gutter="20">
-              <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
-                <el-card class="note-card" shadow="hover">
-                  <template #header>
-                    <div class="card-header">
-                      <span class="note-title">{{ note.title }}</span>
-                      <el-icon class="delete-icon" @click="deleteNote(note.id)"><Close /></el-icon>
-                    </div>
-                  </template>
-                  <div class="note-content">{{ note.content }}</div>
-                </el-card>
-              </el-col>
-            </el-row>
-          </div>
+          <div class="notes-workspace">
+            
+            <template v-if="!expandedNote">
+              <div class="cards-container grid-scroll-area">
+                <el-row :gutter="20" style="margin: 0;">
+                  <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
+                    <el-card class="note-card" shadow="hover" @dblclick="expandNote(note)">
+                      <template #header>
+                        <div class="card-header">
+                          <span class="note-title">{{ note.title }}</span>
+                          <el-icon class="delete-icon" @click.stop="deleteNote(note.id)"><Close /></el-icon>
+                        </div>
+                      </template>
+                      <div class="note-content">{{ note.content }}</div>
+                    </el-card>
+                  </el-col>
+                </el-row>
+              </div>
 
-          <div class="pagination-dock">
-            <el-pagination
-              v-model:current-page="currentPage"
-              :page-size="pageSize"
-              :total="totalNotes"
-              layout="prev, pager, next"
-              @current-change="handlePageChange"
-              background
-            />
+              <div class="pagination-dock">
+                <el-pagination
+                  v-model:current-page="currentPage"
+                  :page-size="pageSize"
+                  :total="totalNotes"
+                  layout="prev, pager, next"
+                  @current-change="handlePageChange"
+                  background
+                />
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="expanded-fullscreen-card">
+                <div class="expanded-header">
+                  <div class="header-left">
+                    <el-button :icon="Back" circle @click="closeExpandedNote" class="back-btn"></el-button>
+                    <h2 class="expanded-title">{{ expandedNote.title }}</h2>
+                  </div>
+                </div>
+                
+                <div class="expanded-body markdown-body">
+                  {{ expandedNote.content }}
+                </div>
+              </div>
+            </template>
+
           </div>
-          
         </div>
-      </div>
-    </div>
+        </div>
+        </div>
   </div>
    </template>
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
-import { Sunny, Moon, Close } from '@element-plus/icons-vue'
+import { Sunny, Moon, Close, Back } from '@element-plus/icons-vue'
 import axios from 'axios' // 引入 HTTP 客户端
 
 import { marked } from 'marked'
@@ -245,6 +265,17 @@ const deleteNote = (id) => {
   console.log(`触发删除操作，笔记 ID: ${id}`)
   // 模拟前端移除，后续对接后端删除接口
   notesList.value = notesList.value.filter(note => note.id !== id)
+}
+
+// ================= 笔记卡片展开/收起逻辑 =================
+const expandedNote = ref(null)
+
+const expandNote = (note) => {
+  expandedNote.value = note
+}
+
+const closeExpandedNote = () => {
+  expandedNote.value = null
 }
 </script>
 
@@ -707,4 +738,78 @@ const deleteNote = (id) => {
   background-color: var(--tb-color-primary);
   color: #fff;
 }
+
+/* ================= 绿框工作区基础限制 ================= */
+.notes-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 30px;
+  height: 100%;
+  box-sizing: border-box;
+  /* 核心：外层大框绝对禁止滚动，杜绝双滚动条 */
+  overflow: hidden; 
+}
+
+/* ================= 网格模式样式 ================= */
+.cards-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+.grid-scroll-area {
+  overflow-y: auto; /* 网格模式下允许多行卡片往下滚 */
+  overflow-x: hidden; /* 杜绝底部横向滚动条 */
+  padding-right: 5px;
+}
+
+/* ================= 大卡片铺满模式样式 ================= */
+.expanded-fullscreen-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 100% 霸占绿色框高度 */
+  background-color: var(--tb-color-bg-panel);
+  border-radius: 10px;
+  border: 1px solid var(--tb-color-border);
+  box-sizing: border-box;
+  animation: fadeInCard 0.2s ease-out;
+}
+
+@keyframes fadeInCard {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.expanded-header {
+  display: flex;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--tb-color-border);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.expanded-title {
+  margin: 0;
+  font-size: 18px;
+  color: var(--tb-color-text-primary);
+}
+
+/* 核心：唯一允许出现滚动条的地方（你的红线） */
+.expanded-body {
+  flex: 1;
+  padding: 25px;
+  overflow-y: auto; 
+  overflow-x: hidden;
+  color: var(--tb-color-text-primary);
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+/* 其他的 .note-card, .delete-icon 等复用之前的即可 */
 </style>
