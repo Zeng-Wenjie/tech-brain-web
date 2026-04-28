@@ -11,7 +11,17 @@
           <div class="avatar" v-if="msg.role === 'ai'">✨</div>
           <div class="msg-content markdown-body" :class="msg.role">
             <div v-if="msg.role === 'user'">{{ msg.content }}</div>
-            <div v-else v-html="parseMarkdown(msg.content)"></div>
+            
+            <div v-else-if="index === 0">
+              <div v-html="parseMarkdown(msg.content)"></div>
+            </div>
+
+            <div v-else class="ai-msg-box">
+              <div v-html="parseMarkdown(msg.content)"></div>
+              <div class="ai-msg-footer">
+                <span class="save-action-btn" @click="handleSaveAiMsg(msg.content)">保存</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -27,7 +37,7 @@
           ></textarea>
           
           <div class="input-actions-right">
-            <span class="model-selector">保存</span>
+            <!-- <span class="model-selector">保存</span> -->
             <button class="send-btn" @click="handleSend">➤</button>
           </div>
         </div>
@@ -95,6 +105,14 @@ import { marked } from 'marked'
 
 // 导入刚刚创建的子组件
 import NotesView from './NotesView.vue'
+
+// 触发保存 AI 消息的方法
+const handleSaveAiMsg = (content) => {
+  if (notesViewRef.value) {
+    // 调用子组件的方法，并把 AI 的内容传过去
+    notesViewRef.value.openAddNote(content)
+  }
+}
 
 // ================= 组件引用与跨组件调用 =================
 const notesViewRef = ref(null)
@@ -425,4 +443,33 @@ const scrollToBottom = async () => {
 .light .menu-item.active { background-color: #d3e3fd; color: #041e49; }
 .menu-item .icon { margin-right: 10px; font-size: 16px; }
 .drawer-footer { margin-top: auto; padding-bottom: 20px; }
+
+/* ================= AI 消息气泡框样式 ================= */
+.ai-msg-box {
+  background-color: var(--tb-color-bg-panel);
+  border: 1px solid var(--tb-color-border);
+  border-radius: 12px;
+  padding: 15px 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); /* 淡淡的投影增加立体感 */
+}
+
+.ai-msg-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--tb-color-border); /* 虚线分割线 */
+}
+
+.save-action-btn {
+  color: #ff4d4f; /* 醒目的红色 */
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+
+.save-action-btn:hover {
+  opacity: 0.7;
+}
 </style>

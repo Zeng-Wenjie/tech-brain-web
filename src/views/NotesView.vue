@@ -15,7 +15,7 @@
                   </div>
                 </div>
               </template>
-              <div class="note-content">{{ note.content }}</div>
+              <div class="note-content">{{ stripMarkdown(note.content) }}</div>
             </el-card>
           </el-col>
         </el-row>
@@ -42,9 +42,7 @@
           </div>
         </div>
         
-        <div class="expanded-body markdown-body">
-          {{ expandedNote.content }}
-        </div>
+       <div class="expanded-body markdown-body" v-html="parseMarkdown(expandedNote.content)"></div>
       </div>
     </template>
 
@@ -91,6 +89,25 @@ import { ref, onMounted, defineExpose } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Close, Back, Edit } from '@element-plus/icons-vue' // 加上了 Edit
 import axios from 'axios' // 记得引入 axios
+import { marked } from 'marked' // 新增：引入 Markdown 解析器
+
+// ... 你之前的变量定义保持不变 ...
+
+// 1. 用于“放大视图”：将 Markdown 真正渲染成带样式的富文本 HTML
+const parseMarkdown = (text) => {
+  if (!text) return ''
+  return marked(text)
+}
+
+// 2. 用于“小卡片预览”：粗略剥离 Markdown 符号，只给用户展示干净的纯文本
+const stripMarkdown = (text) => {
+  if (!text) return ''
+  return text.replace(/\*\*(.*?)\*\*/g, '$1') // 去除粗体符号 **
+             .replace(/###?\s(.*?)\n/g, '$1\n') // 去除标题符号 #
+             .replace(/`(.*?)`/g, '$1')       // 去除代码块符号 `
+             .replace(/\[(.*?)\]\(.*?\)/g, '$1') // 去除链接符号
+             .replace(/\n/g, ' ')             // 把换行换成空格，防止卡片排版错乱
+}
 
 // ================= 1. 数据状态定义 =================
 const notesList = ref([]) // 初始为空，等后端数据
@@ -125,11 +142,12 @@ onMounted(() => {
 })
 
 // ================= 3. 新增与修改弹窗控制 =================
-// 暴露给父组件(AgentView)使用的新增方法
-const openAddNote = () => {
+// 接收外部传来的初始内容（如果是点 AI 保存传过来的，initialContent 就有值）
+const openAddNote = (initialContent = '') => {
   dialogTitle.value = '✨ 录入新知识'
   currentNoteId.value = null
-  newNote.value = { title: '', content: '' }
+  // 自动把 AI 的内容填入 textarea 里
+  newNote.value = { title: '', content: initialContent } 
   dialogVisible.value = true
 }
 defineExpose({ openAddNote })
@@ -152,8 +170,8 @@ const saveNote = async () => {
   try {
     if (currentNoteId.value) {
       // 执行修改 (对应你的 @PutMapping)
-      const res = await axios.put('/api/article', {
-        id: currentNoteId.value,
+      // 执行新增 (对接你最新写的双写接口)
+      const res = await axios.post('/api/article', {
         title: newNote.value.title,
         content: newNote.value.content
       })
@@ -167,7 +185,7 @@ const saveNote = async () => {
       }
     } else {
       // 执行新增 (对应你的 @PostMapping)
-      const res = await axios.post('/api/article', {
+      const res = await axios.post('/api/save-note', {
         title: newNote.value.title,
         content: newNote.value.content
       })
