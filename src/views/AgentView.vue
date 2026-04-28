@@ -70,7 +70,7 @@
             <div class="drawer-section" style="margin-top: 20px;">
               <div class="section-title">笔记本操作</div>
               <div class="menu-item active"><span class="icon">📝</span> 全部笔记</div>
-              <div class="menu-item"><span class="icon">+</span> 新建笔记本</div>
+              <div class="menu-item" @click="openAddNote"><span class="icon">+</span> 新建笔记本</div>
             </div>
             
             <div class="drawer-footer">
@@ -132,6 +132,44 @@
         </div>
         </div>
         </div>
+
+ <!-- ================= 5. 新建笔记表单逻辑 ================= -->
+        <el-dialog
+      v-model="dialogVisible"
+      title="✨ 录入新知识"
+      width="500px"
+      :append-to-body="true"
+      destroy-on-close
+      class="custom-dialog"
+    >
+      <el-form :model="newNote" label-position="top">
+        <el-form-item label="笔记标题">
+          <el-input 
+            v-model="newNote.title" 
+            placeholder="给这段知识起个名字..." 
+            maxlength="30"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="详细内容">
+          <el-input 
+            v-model="newNote.content" 
+            type="textarea" 
+            :rows="6" 
+            placeholder="在这里输入详细的笔记内容，Tech-Brain 会学习这些内容..." 
+          />
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveNote">
+            存入知识库
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
    </template>
 
@@ -266,6 +304,43 @@ const deleteNote = (id) => {
   console.log(`触发删除操作，笔记 ID: ${id}`)
   // 模拟前端移除，后续对接后端删除接口
   notesList.value = notesList.value.filter(note => note.id !== id)
+}
+
+// ================= 5. 新建笔记表单逻辑 =================
+const dialogVisible = ref(false) // 控制弹窗显示
+const newNote = ref({
+  title: '',
+  content: ''
+})
+
+// 打开弹窗的方法
+const openAddNote = () => {
+  // 每次打开先清空之前的输入
+  newNote.value = { title: '', content: '' }
+  dialogVisible.value = true
+}
+
+// 保存笔记的方法
+const saveNote = () => {
+  if (!newNote.value.title.trim() || !newNote.value.content.trim()) {
+    ElMessage.warning('标题和内容都不能为空哦，哥哥')
+    return
+  }
+
+  // 模拟保存：往列表最前面插一条数据
+  const noteObj = {
+    id: Date.now(), // 临时用时间戳当 ID
+    title: newNote.value.title,
+    content: newNote.value.content
+  }
+
+  notesList.value.unshift(noteObj) // 插入到数组开头，这样 3x3 的第一个格子就是它
+  
+  // 如果当前总数超过了 9 条（或者你设置的 pageSize），这里后续联调时需要考虑分页逻辑
+  // 目前前端模拟，它会直接出现在第一页第一个位置
+  
+  dialogVisible.value = false // 关闭弹窗
+  ElMessage.success('笔记已成功存入知识库（前端模拟）')
 }
 
 // ================= 笔记卡片展开/收起逻辑 =================
@@ -793,6 +868,7 @@ const closeExpandedNote = () => {
   line-height: 1.8;
   white-space: pre-wrap;
 }
+/* 其他的 .note-card, .delete-icon 等复用之前的即可 */
 
 /* ================= 专门美化放大卡片内的滚动条 ================= */
 /* 确保内容区真正拥有滚动权限 */
@@ -821,5 +897,25 @@ const closeExpandedNote = () => {
   background-color: var(--tb-color-text-secondary); /* 鼠标放上去变深一点 */
 }
 
-/* 其他的 .note-card, .delete-icon 等复用之前的即可 */
+/* 5. 新建笔记表单逻辑 */
+/* 弹窗样式适配 */
+:deep(.custom-dialog) {
+  background-color: var(--tb-color-bg-panel) !important;
+  border-radius: 12px;
+}
+
+:deep(.el-dialog__title) {
+  color: var(--tb-color-text-primary);
+}
+
+:deep(.el-form-item__label) {
+  color: var(--tb-color-text-secondary);
+}
+
+:deep(.el-input__inner), :deep(.el-textarea__inner) {
+  background-color: var(--tb-color-bg-input);
+  border-color: var(--tb-color-border);
+  color: var(--tb-color-text-primary);
+}
+
 </style>
