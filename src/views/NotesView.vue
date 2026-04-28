@@ -9,7 +9,10 @@
               <template #header>
                 <div class="card-header">
                   <span class="note-title">{{ note.title }}</span>
-                  <el-icon class="delete-icon" @click.stop="deleteNote(note.id)"><Close /></el-icon>
+                  <div>
+                    <el-icon class="edit-icon" @click.stop="openEditNote(note)" style="margin-right: 10px;"><Edit /></el-icon>
+                    <el-icon class="delete-icon" @click.stop="deleteNote(note.id)"><Close /></el-icon>
+                  </div>
                 </div>
               </template>
               <div class="note-content">{{ note.content }}</div>
@@ -47,7 +50,7 @@
 
     <el-dialog
       v-model="dialogVisible"
-      title="✨ 录入新知识"
+      :title="dialogTitle" 
       width="500px"
       :append-to-body="true"
       destroy-on-close
@@ -84,74 +87,135 @@
 </template>
 
 <script setup>
-import { ref, defineExpose } from 'vue'
+import { ref, onMounted, defineExpose } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Back } from '@element-plus/icons-vue'
+import { Close, Back, Edit } from '@element-plus/icons-vue' // 加上了 Edit
+import axios from 'axios' // 记得引入 axios
 
-// ================= 知识库卡片与分页逻辑 =================
+// ================= 1. 数据状态定义 =================
+const notesList = ref([]) // 初始为空，等后端数据
+const expandedNote = ref(null)
+
 const currentPage = ref(1)
 const pageSize = ref(9)
-const totalNotes = ref(45)
+const totalNotes = ref(0)
 
-const notesList = ref(Array.from({ length: 9 }).map((_, index) => ({
-  id: index + 1,
-  title: `Spring Boot 核心概念 ${index + 1}`,
-  content: `这是关于 Spring Boot 知识点 ${index + 1} 的详细笔记记录。\n\n` + 
-           `测试滚动条测试滚动条测试滚动条测试滚动条测试滚动条\n`.repeat(50)
-})))
+// 弹窗相关状态
+const dialogVisible = ref(false)
+const dialogTitle = ref('✨ 录入新知识')
+const currentNoteId = ref(null)
+const newNote = ref({ title: '', content: '' })
 
-const handlePageChange = (val) => {
-  console.log(`前端触发分页查询，当前页: ${val}`)
+// ================= 2. 查询 (Read) =================
+const fetchNotes = async () => {
+  try {
+    const res = await axios.get('/api/article') // 对应你的 @GetMapping
+    if (res.data && res.data.code === 200) {
+      notesList.value = res.data.data
+      totalNotes.value = res.data.data.length // 如果暂时没做真分页，先用总长度代替
+    }
+  } catch (error) {
+    ElMessage.error('获取知识库列表失败，请检查后端服务')
+  }
 }
 
+// 组件挂载时自动查库
+onMounted(() => {
+  fetchNotes()
+})
+
+// ================= 3. 新增与修改弹窗控制 =================
+// 暴露给父组件(AgentView)使用的新增方法
+const openAddNote = () => {
+  dialogTitle.value = '✨ 录入新知识'
+  currentNoteId.value = null
+  newNote.value = { title: '', content: '' }
+  dialogVisible.value = true
+}
+defineExpose({ openAddNote })
+
+// 点击卡片上的编辑按钮
+const openEditNote = (note) => {
+  dialogTitle.value = '✏️ 编辑笔记'
+  currentNoteId.value = note.id
+  newNote.value = { title: note.title, content: note.content } // 回显数据
+  dialogVisible.value = true
+}
+
+// ================= 4. 保存 (Create & Update) =================
+const saveNote = async () => {
+  if (!newNote.value.title.trim() || !newNote.value.content.trim()) {
+    ElMessage.warning('标题和内容都不能为空哦，哥哥')
+    return
+  }
+
+  try {
+    if (currentNoteId.value) {
+      // 执行修改 (对应你的 @PutMapping)
+      const res = await axios.put('/api/article', {
+        id: currentNoteId.value,
+        title: newNote.value.title,
+        content: newNote.value.content
+      })
+      if (res.data.code === 200) {
+        ElMessage.success('修改成功')
+        // 如果放大的刚好是这篇，同步更新视图
+        if (expandedNote.value && expandedNote.value.id === currentNoteId.value) {
+          expandedNote.value.title = newNote.value.title
+          expandedNote.value.content = newNote.value.content
+        }
+      }
+    } else {
+      // 执行新增 (对应你的 @PostMapping)
+      const res = await axios.post('/api/article', {
+        title: newNote.value.title,
+        content: newNote.value.content
+      })
+      if (res.data.code === 200) {
+        ElMessage.success('笔记已存入数据库')
+      }
+    }
+    
+    dialogVisible.value = false
+    fetchNotes() // 保存完毕，重新拉取最新数据
+  } catch (error) {
+    ElMessage.error('操作失败，接口异常')
+  }
+}
+
+// ================= 5. 删除 (Delete) =================
 const deleteNote = (id) => {
   ElMessageBox.confirm('确定要彻底删除这篇笔记吗？', '删除确认', {
     confirmButtonText: '确定删除',
     cancelButtonText: '取消',
     type: 'warning',
-  }).then(() => {
-    notesList.value = notesList.value.filter(note => note.id !== id)
-    if (expandedNote.value && expandedNote.value.id === id) {
-      closeExpandedNote()
+  }).then(async () => {
+    try {
+      const res = await axios.delete(`/api/article/${id}`) // 对应你的 @DeleteMapping
+      if (res.data.code === 200) {
+        ElMessage.success('笔记删除成功')
+        fetchNotes() // 重新拉取
+        
+        // 如果删掉的正是当前放大的这篇，退回网格
+        if (expandedNote.value && expandedNote.value.id === id) {
+          closeExpandedNote()
+        }
+      }
+    } catch (error) {
+      ElMessage.error('删除失败，接口异常')
     }
-    ElMessage.success('笔记删除成功')
   }).catch(() => {
     ElMessage.info('已取消删除')
   })
 }
 
-// ================= 新建笔记逻辑 =================
-const dialogVisible = ref(false)
-const newNote = ref({ title: '', content: '' })
-
-// 暴露给父组件（AgentView）调用的方法
-const openAddNote = () => {
-  newNote.value = { title: '', content: '' }
-  dialogVisible.value = true
-}
-// 关键：将此方法暴露出去，让外部可以使用
-defineExpose({ openAddNote })
-
-const saveNote = () => {
-  if (!newNote.value.title.trim() || !newNote.value.content.trim()) {
-    ElMessage.warning('标题和内容都不能为空哦，哥哥')
-    return
-  }
-  const noteObj = {
-    id: Date.now(),
-    title: newNote.value.title,
-    content: newNote.value.content
-  }
-  notesList.value.unshift(noteObj)
-  dialogVisible.value = false
-  ElMessage.success('笔记已成功存入知识库')
-}
-
-// ================= 笔记放大/收起逻辑 =================
-const expandedNote = ref(null)
-
+// ================= 6. 展开/收起逻辑 =================
 const expandNote = (note) => { expandedNote.value = note }
 const closeExpandedNote = () => { expandedNote.value = null }
+
+const handlePageChange = (val) => {
+  console.log(`切换到第 ${val} 页，后续联调真实分页`)
+}
 </script>
 
 <style scoped>
@@ -249,5 +313,15 @@ const closeExpandedNote = () => { expandedNote.value = null }
   background-color: var(--tb-color-bg-input);
   border-color: var(--tb-color-border);
   color: var(--tb-color-text-primary);
+}
+
+.edit-icon {
+  cursor: pointer;
+  color: var(--tb-color-text-secondary);
+  font-size: 16px;
+  transition: color 0.2s;
+}
+.edit-icon:hover {
+  color: var(--tb-color-primary); 
 }
 </style>

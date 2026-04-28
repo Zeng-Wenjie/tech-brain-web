@@ -14,12 +14,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 拦截所有 /api 开头的请求
+      // 拦截所有以 /api 开头的请求
       '/api': {
-        target: 'http://localhost:8080', // 你 Spring Boot 项目的实际地址和端口
-        changeOrigin: true, // 允许跨域
-        // 如果你的后端接口不带 /api 前缀，需要把这里解开进行路径重写
-        // rewrite: (path) => path.replace(/^\/api/, '')
+        target: 'http://localhost:8080', // 注意：这里必须是你 Java Spring Boot 实际启动的端口！
+        changeOrigin: true,
+        // 将 /api/article 重写为 /article，完美对接你的后端 @RequestMapping("/article")
+        rewrite: (path) => path.replace(/^\/api/, '')
       }
     }
   }
