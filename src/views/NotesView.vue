@@ -5,18 +5,28 @@
       <div class="cards-container">
         <el-row :gutter="20" style="margin: 0;">
           <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
-            <el-card class="note-card" shadow="hover" @dblclick="expandNote(note)">
+            <el-card class="note-card" shadow="hover" @dblclick="!isManageMode && expandNote(note)">
               <template #header>
                 <div class="card-header">
                   <span class="note-title">{{ note.title }}</span>
-                  <div>
-                    <el-icon class="edit-icon" @click.stop="openEditNote(note)" style="margin-right: 10px;"><Edit /></el-icon>
-                    <el-icon class="delete-icon" @click.stop="deleteNote(note.id)"><Close /></el-icon>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    
+                    <div 
+                      v-if="isManageMode" 
+                      class="circle-checkbox" 
+                      :class="{ 'is-checked': selectedIds.includes(note.id) }"
+                      @click.stop="toggleSelectNote(note.id)"
+                    ></div>
+                    
+                    <template v-else>
+                      <el-icon class="edit-icon" @click.stop="openEditNote(note)"><Edit /></el-icon>
+                      <el-icon class="delete-icon" @click.stop="deleteNote(note.id)"><Close /></el-icon>
+                    </template>
+                    
                   </div>
                 </div>
               </template>
-              <div class="note-content">{{ stripMarkdown(note.content) }}</div>
-            </el-card>
+              </el-card>
           </el-col>
         </el-row>
       </div>
@@ -150,7 +160,6 @@ const openAddNote = (initialContent = '') => {
   newNote.value = { title: '', content: initialContent } 
   dialogVisible.value = true
 }
-defineExpose({ openAddNote })
 
 // 点击卡片上的编辑按钮
 const openEditNote = (note) => {
@@ -234,6 +243,52 @@ const closeExpandedNote = () => { expandedNote.value = null }
 const handlePageChange = (val) => {
   console.log(`切换到第 ${val} 页，后续联调真实分页`)
 }
+
+// ================= 批量管理状态与逻辑 =================
+const isManageMode = ref(false) // 是否开启编辑(批量操作)模式
+const selectedIds = ref([])     // 存放选中的笔记 ID
+
+// 切换编辑模式
+const toggleManageMode = () => {
+  isManageMode.value = !isManageMode.value
+  selectedIds.value = [] // 每次退出或进入时，清空选中状态
+}
+
+// 选中/取消选中某张卡片
+const toggleSelectNote = (id) => {
+  const index = selectedIds.value.indexOf(id)
+  if (index > -1) {
+    selectedIds.value.splice(index, 1) // 已选中则移除
+  } else {
+    selectedIds.value.push(id) // 未选中则加入
+  }
+}
+
+// 执行批量删除请求
+const batchDeleteNotes = () => {
+  if (selectedIds.value.length === 0) return
+
+  ElMessageBox.confirm(`确定要彻底删除选定的 ${selectedIds.value.length} 篇笔记吗？`, '批量删除', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'danger',
+  }).then(async () => {
+    try {
+      // ⚠️ 极其关键：axios 的 DELETE 请求带有 body 参数时，必须包在 data 属性里！
+      const res = await axios.delete('/api/article/batch', {
+        data: selectedIds.value 
+      })
+      if (res.data.code === 200 || res.data.code === 1) {
+        ElMessage.success('批量删除成功')
+        toggleManageMode() // 删完退出编辑模式
+        fetchNotes() // 重新拉取最新列表
+      }
+    } catch (error) {
+      ElMessage.error('批量删除失败，接口异常')
+    }
+  }).catch(() => {})
+}
+defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDeleteNotes })
 </script>
 
 <style scoped>
@@ -242,7 +297,7 @@ const handlePageChange = (val) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100%; /* 强制向下撑满 */
   box-sizing: border-box;
   overflow: hidden; 
 }
@@ -341,5 +396,21 @@ const handlePageChange = (val) => {
 }
 .edit-icon:hover {
   color: var(--tb-color-primary); 
+}
+
+/* ================= 批量管理的圆框绿点样式 ================= */
+.circle-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--tb-color-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+.circle-checkbox.is-checked {
+  background-color: #67c23a; 
+  border-color: #67c23a;
+  box-shadow: inset 0 0 0 3px var(--tb-color-bg-panel); 
 }
 </style>

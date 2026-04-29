@@ -48,9 +48,18 @@
     <div class="extension-pane">
       
       <div class="pane-header right-header">
-        <div class="header-actions">
+       <div class="header-actions" style="display: flex; align-items: center; gap: 15px;">
           <span class="icon-btn" title="菜单" @click="isDrawerVisible = !isDrawerVisible">≡</span>
-          <span class="icon-btn" title="新建笔记" @click="triggerAddNote" style="margin-left: 10px;">+</span>
+          
+          <template v-if="notesViewRef && !notesViewRef.isManageMode">
+            <span class="action-text-btn" @click="triggerAddNote">➕ 新建</span>
+            <span class="action-text-btn" @click="notesViewRef.toggleManageMode()">编辑</span>
+          </template>
+
+          <template v-else-if="notesViewRef && notesViewRef.isManageMode">
+            <span class="action-text-btn" @click="notesViewRef.toggleManageMode()">取消</span>
+            <span class="action-text-btn danger" @click="notesViewRef.batchDeleteNotes()">删除 ({{ notesViewRef.selectedIds.length }})</span>
+          </template>
         </div>
         
         <div class="right-configs">
@@ -79,9 +88,7 @@
         >
           <div class="drawer-container">
             <div class="drawer-section" style="margin-top: 20px;">
-              <div class="section-title">笔记本操作</div>
               <div class="menu-item active"><span class="icon">📝</span> 全部笔记</div>
-              <div class="menu-item" @click="triggerAddNote"><span class="icon">+</span> 新建笔记本</div>
             </div>
             
             <div class="drawer-footer">
@@ -363,7 +370,17 @@ const scrollToBottom = async () => {
   background-color: var(--tb-color-bg-page);
   display: flex;
   flex-direction: column; 
+  height: 100vh; /* 强制满高 */
   transition: background-color 0.3s ease;
+}
+
+.extension-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: 100%; /* 强制向下撑满 */
+  overflow: hidden;
 }
 
 .right-header {
@@ -471,5 +488,22 @@ const scrollToBottom = async () => {
 
 .save-action-btn:hover {
   opacity: 0.7;
+}
+
+.action-text-btn {
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--tb-color-text-secondary);
+  transition: color 0.2s;
+}
+.action-text-btn:hover {
+  color: var(--tb-color-primary);
+}
+.action-text-btn.danger {
+  color: #f56c6c;
+  font-weight: bold;
+}
+.action-text-btn.danger:hover {
+  color: #ff8989;
 }
 </style>
