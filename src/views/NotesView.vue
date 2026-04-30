@@ -5,7 +5,8 @@
       <div class="cards-container">
         <el-row :gutter="20" style="margin: 0;">
           <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
-            <el-card class="note-card" shadow="hover" @dblclick="!isManageMode && expandNote(note)">
+           <el-card class="note-card" shadow="hover" @dblclick="!isManageMode && expandNote(note)">
+              
               <template #header>
                 <div class="card-header">
                   <span class="note-title">{{ note.title }}</span>
@@ -26,21 +27,30 @@
                   </div>
                 </div>
               </template>
-              </el-card>
+              
+              <div class="note-content">{{ stripMarkdown(note.content) }}</div>
+              
+            </el-card>
           </el-col>
         </el-row>
       </div>
 
-      <div class="pagination-dock">
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="totalNotes"
-          layout="prev, pager, next"
-          @current-change="handlePageChange"
-          background
-        />
-      </div>
+      <div class="pagination-container" style="display: flex; justify-content: center; margin-top: 20px;">
+  <el-pagination
+    background
+    layout="slot, prev, pager, next" 
+    :total="totalNotes"
+    :page-size="pageSize"
+    v-model:current-page="currentPage"
+    @current-change="handlePageChange"
+  >
+    <span class="custom-pagination-info">
+      共 <strong>{{ totalNotes }}</strong> 条笔记 
+      <span class="divider">/</span> 
+      共 <strong>{{ totalPages }}</strong> 页
+    </span>
+  </el-pagination>
+</div>
     </template>
 
     <template v-else>
@@ -133,16 +143,31 @@ const dialogTitle = ref('✨ 录入新知识')
 const currentNoteId = ref(null)
 const newNote = ref({ title: '', content: '' })
 
-// ================= 2. 查询 (Read) =================
+const totalPages = ref(0) // 新增：用来接收总页数
+
+// ================= 1. 获取分页数据 =================
 const fetchNotes = async () => {
   try {
-    const res = await axios.get('/api/article') // 对应你的 @GetMapping
-    if (res.data && res.data.code === 200) {
-      notesList.value = res.data.data
-      totalNotes.value = res.data.data.length // 如果暂时没做真分页，先用总长度代替
+    // 调用后端新写的分页接口，并把页码传过去
+    // 注意：这里的字段名要和你后端的 PageQuery 实体类保持一致 (pageNo, pageSize)
+    const res = await axios.get('api/article/page', { // 替换为你的真实路径，比如 /api/article/page
+      params: {
+        pageNo: currentPage.value,
+        pageSize: pageSize.value
+      }
+    })
+    
+    if (res.data && res.data.code === 200) { // 假设你的成功状态码是 200
+      // ⚠️ 核心改变：对接你的 PageDTO
+      notesList.value = res.data.data.list   // 把真正的文章数组抽出来给卡片渲染
+      totalNotes.value = res.data.data.total // 把总条数赋给分页器
+      totalPages.value = res.data.data.pages //总页数
+    } else {
+      ElMessage.error(res.data.msg || '获取列表失败')
     }
   } catch (error) {
-    ElMessage.error('获取知识库列表失败，请检查后端服务')
+    ElMessage.error('服务器连接异常')
+    console.error(error)
   }
 }
 
@@ -204,6 +229,7 @@ const saveNote = async () => {
     }
     
     dialogVisible.value = false
+    currentPage.value = 1 // 强制切回第一页
     fetchNotes() // 保存完毕，重新拉取最新数据
   } catch (error) {
     ElMessage.error('操作失败，接口异常')
@@ -240,8 +266,10 @@ const deleteNote = (id) => {
 const expandNote = (note) => { expandedNote.value = note }
 const closeExpandedNote = () => { expandedNote.value = null }
 
+// ================= 2. 处理点击翻页 =================
 const handlePageChange = (val) => {
-  console.log(`切换到第 ${val} 页，后续联调真实分页`)
+  currentPage.value = val // 更新当前所在的页码
+  fetchNotes()            // 重新向后端发请求，拉取新一页的数据
 }
 
 // ================= 批量管理状态与逻辑 =================
@@ -412,5 +440,18 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   background-color: #67c23a; 
   border-color: #67c23a;
   box-shadow: inset 0 0 0 3px var(--tb-color-bg-panel); 
+}
+
+/* 去除 Element Plus 分页器自带的“禁止点击”鼠标手势 */
+.pagination-container :deep(.el-pagination button:disabled),
+.pagination-container :deep(.el-pagination .btn-prev:disabled),
+.pagination-container :deep(.el-pagination .btn-next:disabled),
+.pagination-container :deep(.el-pagination .el-pager li.is-active) {
+  cursor: default !important; /* 强制替换为普通的箭头鼠标 */
+}
+
+/* 如果你觉得悬浮在当前页码上还是有点暗，可以顺手加这句保持亮蓝 */
+.pagination-container :deep(.el-pagination .el-pager li.is-active:hover) {
+  color: #409eff !important;
 }
 </style>

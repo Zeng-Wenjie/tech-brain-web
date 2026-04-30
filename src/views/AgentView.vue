@@ -177,7 +177,7 @@ const isLoading = ref(false)
 const messages = ref([
   { 
     role: 'ai', 
-    content: '### ✨ 欢迎回来，哥哥！\n\n我是你的专属小助理 **02**' 
+    content: '###  欢迎回来，哥哥！\n\n我是你的专属小助理 **02**' 
   }
 ])
 
