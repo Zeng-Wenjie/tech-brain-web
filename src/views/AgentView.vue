@@ -28,15 +28,15 @@
 
       <div class="input-dock">
         <div class="gemini-input-wrapper">
-          <textarea 
-          ref="textareaRef"
-          v-model="userInput"
-          placeholder="输入给 Tech-Brain 的指令..."
-          class="custom-textarea"
-          rows="1"
-          @input="adjustHeight"
-          @keydown.enter.prevent="handleSend"
-          ></textarea>
+        <textarea 
+        ref="textareaRef"
+        v-model="userInput"
+        placeholder="输入给 Tech-Brain 的指令..."
+        class="custom-textarea"
+        rows="1"
+        @input="adjustHeight"
+        @keydown.enter.prevent="handleSend"
+        ></textarea>
           
           <div class="input-actions-right">
             <!-- <span class="model-selector">保存</span> -->
@@ -190,7 +190,15 @@ const handleSend = async () => {
 
   messages.value.push({ role: 'user', content: text })
   userInput.value = ''
-  if (textareaRef.value) textareaRef.value.style.height = 'auto'
+  
+  // 💡 发送完毕后，等 DOM 清空渲染完毕，再把高度缩回单行
+  nextTick(() => {
+    if (textareaRef.value) {
+      textareaRef.value.style.height = 'auto'
+    }
+  })
+
+  // 👇 下面这些核心代码原本被大括号挡在门外了，现在全部请回函数内！
   await scrollToBottom()
 
   isLoading.value = true
@@ -203,12 +211,13 @@ const handleSend = async () => {
     })
     messages.value.pop()
 
-    if (response.data && response.code === 200) {
+    // 顺手帮主公脱掉了这里多余的 .data 外套
+    if (response.code === 200) {
       messages.value.push({ role: 'ai', content: response.data })
     } else {
       messages.value.push({ 
         role: 'ai', 
-        content: `调用异常：${response.data.message || '后端返回非200状态码'}` 
+        content: `调用异常：${response.message || '后端返回非200状态码'}` 
       })
     }
   } catch (error) {
@@ -221,27 +230,20 @@ const handleSend = async () => {
     isLoading.value = false
     await scrollToBottom()
   }
-
-  // 💡 核心：动态自适应高度函数
+} 
+ 
 const adjustHeight = () => {
-  const textarea = textareaRef.value
-  if (!textarea) return
-  
-  // 先把高度重置，这样删减文字时才能自动缩小
-  textarea.style.height = 'auto' 
-  
-  // 拿到文字实际撑开的高度
-  const scrollHeight = textarea.scrollHeight
-  
-  // 限制最大高度为 150px (大概 6 行)，超过了就出现内部滚动条
-  if (scrollHeight <= 150) {
-    textarea.style.height = scrollHeight + 'px'
-    textarea.style.overflowY = 'hidden'
-  } else {
-    textarea.style.height = '150px'
-    textarea.style.overflowY = 'auto'
-  }
-}
+  // 等 DOM 真正把文字渲染换行后，再去算高度！
+  nextTick(() => {
+    const textarea = textareaRef.value
+    if (!textarea) return
+    
+    // 1. 先变回 auto，释放空间
+    textarea.style.height = 'auto'
+    
+    // 2. 拿到的 scrollHeight 绝对是换行后的真实高度！
+    textarea.style.height = textarea.scrollHeight + 'px'
+  })
 }
 
 const scrollToBottom = async () => {
@@ -334,36 +336,53 @@ const scrollToBottom = async () => {
   background-color: var(--tb-color-bg-input);
   border-radius: 20px;
   display: flex;
-  align-items: flex-end; 
+  align-items: flex-end; /* 确保发送按钮永远在右下角 */
   padding: 10px 15px;
   gap: 10px;
   border: 1px solid transparent; 
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .gemini-input-wrapper:focus-within {
-  border-color: #409eff; /* Element Plus 经典科技蓝 */
+  border-color: #409eff; 
   box-shadow: 0 4px 15px rgba(64, 158, 255, 0.2);
-  transform: translateY(-2px);
+  /* 去掉位移，主打一个稳如泰山的发光 */
 }
 
-:deep(.light .gemini-input-wrapper) {
-  border-color: var(--tb-color-border);
-}
+
 
 .custom-textarea {
   flex: 1;
   background: transparent;
   border: none;
   color: var(--tb-color-text-primary);
-  font-size: 15px; /* 字号稍微调大一点点更有质感 */
+  font-size: 15px;
+  line-height: 1.5;
+  
+  /* 💡 核心魔法开始 */
+  min-height: 24px;      /* 初始单行高度 */
+  max-height: 150px;     /* 限制最大高度（大约 6 行） */
+  overflow-y: auto;      /* 超过 max-height 后自动出现滚动条 */
+  /* 💡 核心魔法结束 */
+
+  padding: 2px 0;        /* 极小的内边距，保证文字绝对不被削顶 */
+  margin: 0;
   resize: none;
   outline: none;
-  line-height: 1.5;
-  padding: 4px 0; /* 调整内边距让文字更居中 */
-  overflow-y: hidden; /* 默认隐藏滚动条 */
-  transition: height 0.1s ease; /* 伸缩高度时的丝滑过渡 */
+  box-sizing: border-box;
+
+  /* 💡 专门解决视频中连续输入 11111111 不换行的问题 */
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* 顺手把滚动条美化成 Gemini 同款细条 */
+.custom-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-textarea::-webkit-scrollbar-thumb {
+  background-color: var(--tb-color-border);
+  border-radius: 4px;
 }
 
 .custom-textarea::placeholder {

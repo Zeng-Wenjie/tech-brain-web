@@ -4,7 +4,7 @@ import router from '@/router'
 
 const request = axios.create({
   baseURL: 'http://localhost:8080', // 指向你的 Spring Boot 地址
-  timeout: 5000
+  timeout: 60000
 })
 
 // 1. 请求拦截器：在大门里面，给每个发出的请求都贴上 Token
