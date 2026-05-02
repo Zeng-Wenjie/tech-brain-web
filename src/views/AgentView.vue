@@ -29,11 +29,13 @@
       <div class="input-dock">
         <div class="gemini-input-wrapper">
           <textarea 
-            v-model="userInput"
-            placeholder="输入给 Tech-Brain 的指令..."
-            class="custom-textarea"
-            rows="1"
-            @keydown.enter.prevent="handleSend"
+          ref="textareaRef"
+          v-model="userInput"
+          placeholder="输入给 Tech-Brain 的指令..."
+          class="custom-textarea"
+          rows="1"
+          @input="adjustHeight"
+          @keydown.enter.prevent="handleSend"
           ></textarea>
           
           <div class="input-actions-right">
@@ -64,7 +66,7 @@
         
         <div class="right-configs">
           <el-button 
-            type="text" 
+            link 
             class="theme-toggle-btn" 
             @click="toggleTheme"
             :title="isDark ? '切换到亮色模式' : '切换到暗黑模式'"
@@ -107,12 +109,13 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
 import { Sunny, Moon } from '@element-plus/icons-vue' // 清理了不需要的 Close 和 Back
-import axios from 'axios'
+import request from '@/utils/request'
 import { marked } from 'marked'
 
 // 导入刚刚创建的子组件
 import NotesView from './NotesView.vue'
 
+const textareaRef = ref(null)
 // 触发保存 AI 消息的方法
 const handleSaveAiMsg = (content) => {
   if (notesViewRef.value) {
@@ -187,6 +190,7 @@ const handleSend = async () => {
 
   messages.value.push({ role: 'user', content: text })
   userInput.value = ''
+  if (textareaRef.value) textareaRef.value.style.height = 'auto'
   await scrollToBottom()
 
   isLoading.value = true
@@ -194,13 +198,13 @@ const handleSend = async () => {
   await scrollToBottom()
 
   try {
-    const response = await axios.get('/api/chat', {
+    const response = await request.get('/chat', {
       params: { msg: text }
     })
     messages.value.pop()
 
-    if (response.data && response.data.code === 200) {
-      messages.value.push({ role: 'ai', content: response.data.data })
+    if (response.data && response.code === 200) {
+      messages.value.push({ role: 'ai', content: response.data })
     } else {
       messages.value.push({ 
         role: 'ai', 
@@ -217,6 +221,27 @@ const handleSend = async () => {
     isLoading.value = false
     await scrollToBottom()
   }
+
+  // 💡 核心：动态自适应高度函数
+const adjustHeight = () => {
+  const textarea = textareaRef.value
+  if (!textarea) return
+  
+  // 先把高度重置，这样删减文字时才能自动缩小
+  textarea.style.height = 'auto' 
+  
+  // 拿到文字实际撑开的高度
+  const scrollHeight = textarea.scrollHeight
+  
+  // 限制最大高度为 150px (大概 6 行)，超过了就出现内部滚动条
+  if (scrollHeight <= 150) {
+    textarea.style.height = scrollHeight + 'px'
+    textarea.style.overflowY = 'hidden'
+  } else {
+    textarea.style.height = '150px'
+    textarea.style.overflowY = 'auto'
+  }
+}
 }
 
 const scrollToBottom = async () => {
@@ -309,12 +334,18 @@ const scrollToBottom = async () => {
   background-color: var(--tb-color-bg-input);
   border-radius: 20px;
   display: flex;
-  align-items: center;
+  align-items: flex-end; 
   padding: 10px 15px;
   gap: 10px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
   border: 1px solid transparent; 
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+.gemini-input-wrapper:focus-within {
+  border-color: #409eff; /* Element Plus 经典科技蓝 */
+  box-shadow: 0 4px 15px rgba(64, 158, 255, 0.2);
+  transform: translateY(-2px);
 }
 
 :deep(.light .gemini-input-wrapper) {
@@ -326,9 +357,13 @@ const scrollToBottom = async () => {
   background: transparent;
   border: none;
   color: var(--tb-color-text-primary);
-  font-size: 14px;
+  font-size: 15px; /* 字号稍微调大一点点更有质感 */
   resize: none;
   outline: none;
+  line-height: 1.5;
+  padding: 4px 0; /* 调整内边距让文字更居中 */
+  overflow-y: hidden; /* 默认隐藏滚动条 */
+  transition: height 0.1s ease; /* 伸缩高度时的丝滑过渡 */
 }
 
 .custom-textarea::placeholder {

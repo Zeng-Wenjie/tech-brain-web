@@ -4,7 +4,7 @@
     <template v-if="!expandedNote">
       <div class="cards-container">
         <el-row :gutter="20" style="margin: 0;">
-          <el-col :span="8" v-for="note in notesList" :key="note.id" style="margin-bottom: 20px;">
+          <el-col :span="8" v-for="note in notes" :key="note.id" style="margin-bottom: 20px;">
            <el-card class="note-card" shadow="hover" @dblclick="!isManageMode && expandNote(note)">
               
               <template #header>
@@ -39,13 +39,13 @@
   <el-pagination
     background
     layout="slot, prev, pager, next" 
-    :total="totalNotes"
+    :total="total"
     :page-size="pageSize"
     v-model:current-page="currentPage"
     @current-change="handlePageChange"
   >
     <span class="custom-pagination-info">
-      共 <strong>{{ totalNotes }}</strong> 条笔记 
+      共 <strong>{{ total }}</strong> 条笔记 
       <span class="divider">/</span> 
       共 <strong>{{ totalPages }}</strong> 页
     </span>
@@ -108,10 +108,13 @@
 import { ref, onMounted, defineExpose } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Close, Back, Edit } from '@element-plus/icons-vue' // 加上了 Edit
-import axios from 'axios' // 记得引入 axios
+import request from '@/utils/request' // 引入封装好、带了“自动塞Token”功能的request！
 import { marked } from 'marked' // 新增：引入 Markdown 解析器
 
 // ... 你之前的变量定义保持不变 ...
+
+const notes = ref([]) // 用来存笔记列表的数组
+const total = ref(0)  // 用来存总条数
 
 // 1. 用于“放大视图”：将 Markdown 真正渲染成带样式的富文本 HTML
 const parseMarkdown = (text) => {
@@ -130,12 +133,10 @@ const stripMarkdown = (text) => {
 }
 
 // ================= 1. 数据状态定义 =================
-const notesList = ref([]) // 初始为空，等后端数据
 const expandedNote = ref(null)
 
 const currentPage = ref(1)
 const pageSize = ref(9)
-const totalNotes = ref(0)
 
 // 弹窗相关状态
 const dialogVisible = ref(false)
@@ -150,18 +151,17 @@ const fetchNotes = async () => {
   try {
     // 调用后端新写的分页接口，并把页码传过去
     // 注意：这里的字段名要和你后端的 PageQuery 实体类保持一致 (pageNo, pageSize)
-    const res = await axios.get('api/article/page', { // 替换为你的真实路径，比如 /api/article/page
+    const res = await request.get('/article/page', {
       params: {
         pageNo: currentPage.value,
         pageSize: pageSize.value
       }
     })
     
-    if (res.data && res.data.code === 200) { // 假设你的成功状态码是 200
-      // ⚠️ 核心改变：对接你的 PageDTO
-      notesList.value = res.data.data.list   // 把真正的文章数组抽出来给卡片渲染
-      totalNotes.value = res.data.data.total // 把总条数赋给分页器
-      totalPages.value = res.data.data.pages //总页数
+    if (res.data && res.code === 200) { // 假设你的成功状态码是 200
+      //  核心改变：对接你的 PageDTO
+      notes.value = res.data?.records || res.data?.list || []
+      total.value = res.data?.total || 0
     } else {
       ElMessage.error(res.data.msg || '获取列表失败')
     }
@@ -205,11 +205,11 @@ const saveNote = async () => {
     if (currentNoteId.value) {
       // 执行修改 (对应你的 @PutMapping)
       // 执行新增 (对接你最新写的双写接口)
-      const res = await axios.post('/api/article', {
+      const res = await request.post('/article', {
         title: newNote.value.title,
         content: newNote.value.content
       })
-      if (res.data.code === 200) {
+      if (res.code === 200) {
         ElMessage.success('修改成功')
         // 如果放大的刚好是这篇，同步更新视图
         if (expandedNote.value && expandedNote.value.id === currentNoteId.value) {
@@ -219,11 +219,11 @@ const saveNote = async () => {
       }
     } else {
       // 执行新增 (对应你的 @PostMapping)
-      const res = await axios.post('/api/save-note', {
+      const res = await request.post('/save-note', {
         title: newNote.value.title,
         content: newNote.value.content
       })
-      if (res.data.code === 200) {
+      if (res.code === 200) {
         ElMessage.success('笔记已存入数据库')
       }
     }
@@ -244,8 +244,8 @@ const deleteNote = (id) => {
     type: 'warning',
   }).then(async () => {
     try {
-      const res = await axios.delete(`/api/article/${id}`) // 对应你的 @DeleteMapping
-      if (res.data.code === 200) {
+      const res = await request.delete(`/article/${id}`) // 对应你的 @DeleteMapping
+      if (res.code === 200) {
         ElMessage.success('笔记删除成功')
         fetchNotes() // 重新拉取
         
@@ -302,11 +302,11 @@ const batchDeleteNotes = () => {
     type: 'danger',
   }).then(async () => {
     try {
-      // ⚠️ 极其关键：axios 的 DELETE 请求带有 body 参数时，必须包在 data 属性里！
-      const res = await axios.delete('/api/article/batch', {
+      // request 的 DELETE 请求带有 body 参数时，必须包在 data 属性里！
+      const res = await request.delete('/article/batch', {
         data: selectedIds.value 
       })
-      if (res.data.code === 200 || res.data.code === 1) {
+      if (res.code === 200 || res.code === 1) {
         ElMessage.success('批量删除成功')
         toggleManageMode() // 删完退出编辑模式
         fetchNotes() // 重新拉取最新列表
@@ -354,7 +354,7 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
 .note-title { font-weight: bold; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 85%; }
 .delete-icon { cursor: pointer; color: var(--tb-color-text-secondary); font-size: 16px; }
 .delete-icon:hover { color: #f56c6c; }
-.note-content { font-size: 13px; color: var(--tb-color-text-secondary); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.note-content { font-size: 13px; color: var(--tb-color-text-secondary); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 4;line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 .pagination-dock { height: 50px; display: flex; justify-content: center; align-items: center; margin-top: 10px; }
 :deep(.el-pagination.is-background .btn-next),
