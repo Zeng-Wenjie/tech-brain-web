@@ -64,18 +64,28 @@
           </template>
         </div>
         
-        <div class="right-configs">
-          <el-button 
-            link 
-            class="theme-toggle-btn" 
-            @click="toggleTheme"
-            :title="isDark ? '切换到亮色模式' : '切换到暗黑模式'"
-          >
-            <el-icon v-if="isDark" :size="20"><Sunny /></el-icon>
-            <el-icon v-else :size="20"><Moon /></el-icon>
-          </el-button>
-          <div class="user-avatar">U</div>
-        </div>
+       <div class="right-configs">
+  <el-button link class="theme-toggle-btn" @click="toggleTheme">
+    <el-icon v-if="isDark" :size="20"><Sunny /></el-icon>
+    <el-icon v-else :size="20"><Moon /></el-icon>
+  </el-button>
+
+  <el-popover placement="bottom-end" :width="220" trigger="click" popper-class="profile-popper">
+    <template #reference>
+  <div style="cursor: pointer; display: flex; align-items: center;">
+    <el-avatar :size="34" :src="userInfo.avatar" style="background-color: var(--tb-color-primary);">
+      {{ userInfo.name?.charAt(0) || userInfo.username?.charAt(0) || 'U' }}
+    </el-avatar>
+  </div>
+</template>
+    
+    <ProfileCard 
+      :userInfo="userInfo" 
+      @logout="handleLogout" 
+      @open-settings="goToProfile"
+    />
+  </el-popover>
+</div>
       </div>
 
       <div class="extension-content" style="position: relative; overflow: hidden; display: flex; flex-direction: column;">
@@ -114,6 +124,43 @@ import { marked } from 'marked'
 
 // 导入刚刚创建的子组件
 import NotesView from './NotesView.vue'
+
+import { useRouter } from 'vue-router'
+import ProfileCard from '@/components/ProfileCard.vue' // 💡 引入新文件
+
+const router = useRouter()
+
+// 1. 初始状态可以设为空，等待后端数据覆盖
+const userInfo = ref({
+  name: '',
+  username: '', 
+  avatar: '', 
+  level: 1
+})
+
+// 2. 页面加载时请求数据
+onMounted(async () => {
+  try {
+    // 注意：这里的路径请保持和您 ProfileView 里写的一致（比如 '/info' 或 '/user/info'）
+    const res = await request.get('/info') 
+    if (res.code === 200 && res.data) {
+      userInfo.value = res.data
+    }
+  } catch (error) {
+    console.error('获取用户信息失败', error)
+  }
+})
+
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('tech-brain-theme')
+  router.push('/login')
+}
+
+// 跳转个人中心的函数
+const goToProfile = () => {
+  router.push('/profile')
+}
 
 const textareaRef = ref(null)
 // 触发保存 AI 消息的方法
