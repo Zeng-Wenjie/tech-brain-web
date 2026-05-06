@@ -43,9 +43,9 @@
             
             <el-form-item label="性别">
               <el-radio-group v-model="userInfo.gender">
-                <el-radio :label="1">男</el-radio>
-                <el-radio :label="2">女</el-radio>
-                <el-radio :label="0">保密</el-radio>
+                <el-radio :value="1">男</el-radio>
+                <el-radio :value="2">女</el-radio>
+                <el-radio :value="0">保密</el-radio>
               </el-radio-group>
             </el-form-item>
             
@@ -128,23 +128,43 @@ onMounted(async () => {
 
 // ... 原有的 import 和 ref 保持不变 ...
 
-const handleAvatarChange = (file) => {
-  // 限制图片大小为 10MB
-  // file.size 的单位是字节 (Bytes)
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.error('头像图片太大了！请选择 10MB 以下的图片')
-    return // 直接 return，不再向后端发送请求
-  }
-  const formData = new FormData()
-  formData.append('file', file.raw)
-  request.post('/avatar', formData).then(res => {
-    if(res.code === 200) {
-      ElMessage.success('头像上传成功')
-      userInfo.value.avatar = res.data
+const handleAvatarChange = async (file) => {
+  // 1. 如果是文件状态改变引起的触发，且没有原始文件，直接退出
+  if (!file.raw) return;
+
+  // 组装文件数据（这里是您之前丢失的真正上传逻辑！）
+  const formData = new FormData();
+  formData.append('file', file.raw); // 这里的 'file' 要和后端 Controller 接收的参数名一致
+
+  try {
+    //3. 把文件给后端上传接口
+    const uploadRes = await request.post('/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    // 4. 判断阿里云 OSS 是否成功返回了 URL
+    if (uploadRes.code === 200 && uploadRes.data) {
+      
+      // 立马更新前端显示的图片
+      userInfo.value.avatar = uploadRes.data; 
+      ElMessage.success('头像上传至OSS成功');
+
+      // 🎯 5. 拿到新 URL 后，静默调用保存接口，把新信息存进 MySQL，并触发双删
+      const updateRes = await request.post('/userInformation', userInfo.value);
+      
+      if (updateRes.code === 200) {
+        ElMessage.success('头像已永久保存生效！');
+      } else {
+        ElMessage.error('头像保存到数据库失败');
+      }
+
     } else {
-      ElMessage.error(res.message || '上传失败')
+      ElMessage.error('阿里云OSS上传失败');
     }
-  })
+  } catch (error) {
+    console.error("操作异常", error);
+    ElMessage.error('上传接口请求失败，请检查网络或后端状态');
+  }
 }
 
 
