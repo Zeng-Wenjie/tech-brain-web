@@ -60,6 +60,15 @@
             <el-button :icon="Back" circle @click="closeExpandedNote" class="back-btn"></el-button>
             <h2 class="expanded-title">{{ expandedNote.title }}</h2>
           </div>
+          <div class="header-right">
+            <el-button
+              type="primary"
+              :loading="summaryLoading"
+              @click="summarizeNote(expandedNote)"
+            >
+              AI总结
+            </el-button>
+          </div>
         </div>
         
        <div class="expanded-body markdown-body" v-html="parseMarkdown(expandedNote.content)"></div>
@@ -101,13 +110,35 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="summaryDialogVisible"
+      title="AI总结"
+      width="640px"
+      :append-to-body="true"
+      destroy-on-close
+      class="custom-dialog"
+    >
+      <div v-if="summaryLoading" class="summary-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>AI 正在总结中...</span>
+      </div>
+      <div v-else class="summary-content markdown-body" v-html="parseMarkdown(summaryContent)"></div>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="summaryDialogVisible = false">关闭</el-button>
+          <el-button type="primary" :disabled="!summaryContent" @click="copySummary">复制总结</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, defineExpose } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Back, Edit } from '@element-plus/icons-vue' // 加上了 Edit
+import { Close, Back, Edit, Loading } from '@element-plus/icons-vue' // 加上了 Edit
 import request from '@/utils/request' // 引入封装好、带了“自动塞Token”功能的request！
 import { marked } from 'marked' // 新增：引入 Markdown 解析器
 
@@ -143,6 +174,9 @@ const dialogVisible = ref(false)
 const dialogTitle = ref('✨ 录入新知识')
 const currentNoteId = ref(null)
 const newNote = ref({ title: '', content: '' })
+const summaryDialogVisible = ref(false)
+const summaryLoading = ref(false)
+const summaryContent = ref('')
 
 const totalPages = ref(0) // 新增：用来接收总页数
 
@@ -266,6 +300,43 @@ const deleteNote = (id) => {
 const expandNote = (note) => { expandedNote.value = note }
 const closeExpandedNote = () => { expandedNote.value = null }
 
+const summarizeNote = async (note) => {
+  if (!note?.id) return
+
+  summaryDialogVisible.value = true
+  summaryLoading.value = true
+  summaryContent.value = ''
+
+  try {
+    const res = await request.post(`/article/ai/summary/${note.id}`)
+    if (res.code === 200 || res.code === 1) {
+      const data = res.data
+      summaryContent.value = typeof data === 'string'
+        ? data
+        : (data?.summary || data?.content || data?.text || '')
+    } else {
+      ElMessage.error(res.msg || res.message || 'AI总结失败')
+      summaryDialogVisible.value = false
+    }
+  } catch (error) {
+    ElMessage.error('AI总结失败，接口异常')
+    summaryDialogVisible.value = false
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
+const copySummary = async () => {
+  if (!summaryContent.value) return
+
+  try {
+    await navigator.clipboard.writeText(summaryContent.value)
+    ElMessage.success('总结已复制')
+  } catch (error) {
+    ElMessage.error('复制失败')
+  }
+}
+
 // ================= 2. 处理点击翻页 =================
 const handlePageChange = (val) => {
   currentPage.value = val // 更新当前所在的页码
@@ -385,8 +456,9 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   to { opacity: 1; transform: translateY(0); }
 }
 
-.expanded-header { display: flex; align-items: center; padding: 15px 20px; border-bottom: 1px solid var(--tb-color-border); }
+.expanded-header { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--tb-color-border); }
 .header-left { display: flex; align-items: center; gap: 15px; }
+.header-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .expanded-title { margin: 0; font-size: 18px; color: var(--tb-color-text-primary); }
 
 .expanded-body {
@@ -414,6 +486,26 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   background-color: var(--tb-color-bg-input);
   border-color: var(--tb-color-border);
   color: var(--tb-color-text-primary);
+}
+
+.summary-content {
+  min-height: 160px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 4px 2px;
+  color: var(--tb-color-text-primary);
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.summary-loading {
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--tb-color-text-secondary);
+  font-size: 14px;
 }
 
 .edit-icon {
