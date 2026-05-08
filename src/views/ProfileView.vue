@@ -62,6 +62,13 @@
       <div v-if="activeMenu === 'security'" class="security-list">
           <h3 class="section-title">账号安全</h3>
           <div class="security-item">
+            <div class="sec-label">登录密码</div>
+            <div class="sec-value">已设置</div>
+            <el-button link type="primary" @click="openPasswordDialog">
+              修改
+            </el-button>
+          </div>
+          <div class="security-item">
             <div class="sec-label">手机绑定</div>
             <div class="sec-value">{{ userInfo.phone || '未绑定' }}</div>
             <el-button link type="primary" @click="openBindDialog('phone')">
@@ -91,17 +98,56 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="passwordDialogVisible" title="修改登录密码" width="420px" @closed="resetPasswordForm">
+      <el-form label-width="100px">
+        <el-form-item label="旧密码">
+          <el-input
+            v-model="passwordForm.oldPassword"
+            type="password"
+            show-password
+            placeholder="请输入旧密码"
+          />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input
+            v-model="passwordForm.newPassword"
+            type="password"
+            show-password
+            placeholder="请输入 6-20 位新密码"
+          />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input
+            v-model="passwordForm.confirmPassword"
+            type="password"
+            show-password
+            placeholder="请再次输入新密码"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="passwordDialogVisible = false">取 消</el-button>
+          <el-button type="primary" :loading="passwordSubmitting" @click="submitPassword">
+            确 认
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+
   </div> 
   </div>
   </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
 
 
 
+const router = useRouter()
 const activeMenu = ref('info')
 const userInfo = ref({
   username: '',
@@ -180,6 +226,13 @@ const handleSaveInfo = async () => {
 const bindDialogVisible = ref(false)
 const bindType = ref('phone') // 记录当前是修改手机(phone)还是邮箱(email)
 const bindValue = ref('')     // 弹窗里输入框的值
+const passwordDialogVisible = ref(false)
+const passwordSubmitting = ref(false)
+const passwordForm = ref({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
 
 // 💡 2. 打开弹窗的函数
 const openBindDialog = (type) => {
@@ -214,6 +267,72 @@ const submitBind = async () => {
     }
   } catch (error) {
     ElMessage.error('网络异常，请检查后端服务')
+  }
+}
+
+const openPasswordDialog = () => {
+  resetPasswordForm()
+  passwordDialogVisible.value = true
+}
+
+const resetPasswordForm = () => {
+  passwordForm.value = {
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  }
+  passwordSubmitting.value = false
+}
+
+const validatePasswordForm = () => {
+  const { oldPassword, newPassword, confirmPassword } = passwordForm.value
+
+  if (!oldPassword) {
+    ElMessage.warning('旧密码不能为空')
+    return false
+  }
+  if (!newPassword) {
+    ElMessage.warning('新密码不能为空')
+    return false
+  }
+  if (newPassword.length < 6 || newPassword.length > 20) {
+    ElMessage.warning('新密码长度必须为 6-20 位')
+    return false
+  }
+  if (!confirmPassword) {
+    ElMessage.warning('确认密码不能为空')
+    return false
+  }
+  if (newPassword !== confirmPassword) {
+    ElMessage.warning('两次新密码必须一致')
+    return false
+  }
+  if (newPassword === oldPassword) {
+    ElMessage.warning('新密码不能和旧密码相同')
+    return false
+  }
+
+  return true
+}
+
+const submitPassword = async () => {
+  if (!validatePasswordForm()) return
+
+  passwordSubmitting.value = true
+  try {
+    const res = await request.post('/password', passwordForm.value)
+    if (res.code === 200) {
+      ElMessage.success('密码修改成功，请使用新密码重新登录')
+      passwordDialogVisible.value = false
+      localStorage.removeItem('token')
+      router.push('/login')
+    } else {
+      ElMessage.error(res.message || '密码修改失败')
+    }
+  } catch (error) {
+    ElMessage.error('网络异常，请检查后端服务')
+  } finally {
+    passwordSubmitting.value = false
   }
 }
 </script>
