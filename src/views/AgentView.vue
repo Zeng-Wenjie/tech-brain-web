@@ -19,6 +19,7 @@
         >
           <span class="conv-icon">💬</span>
           <span class="conv-title">{{ conv.title || '新会话' }}</span>
+          <span class="conv-delete-btn" @click.stop="deleteConversation(conv.id)" title="删除会话">×</span>
         </div>
       </div>
 
@@ -134,6 +135,7 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
 import { Sunny, Moon } from '@element-plus/icons-vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { marked } from 'marked'
 
@@ -200,6 +202,31 @@ const startNewConversation = () => {
   currentConversationId.value = null
   messages.value = [{ ...WELCOME_MSG }]
   userInput.value = ''
+}
+
+// 删除会话
+const deleteConversation = async (conversationId) => {
+  try {
+    await ElMessageBox.confirm('确定删除该会话吗？', '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await request.delete(`/conversation/${conversationId}`)
+    if (conversationId === currentConversationId.value) {
+      currentConversationId.value = null
+      messages.value = [{ ...WELCOME_MSG }]
+      userInput.value = ''
+    }
+    await fetchConversations()
+    ElMessage.success('会话已删除')
+  } catch (error) {
+    ElMessage.error('删除失败，请重试')
+  }
 }
 
 onMounted(async () => {
@@ -457,6 +484,28 @@ const scrollToBottom = async () => {
 .conv-title {
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+.conv-delete-btn {
+  flex-shrink: 0;
+  display: none;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--tb-color-text-secondary);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  text-align: center;
+  transition: color 0.2s;
+}
+.conv-item:hover .conv-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.conv-delete-btn:hover {
+  color: #f56c6c;
 }
 
 .chat-body {
