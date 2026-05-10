@@ -328,34 +328,71 @@ const handleSend = async () => {
   await scrollToBottom()
 
   isLoading.value = true
-  messages.value.push({ role: 'ai', content: 'Tech-Brain 正在思考...' })
+  messages.value.push({ role: 'ai', content: '' })
+  const aiMsg = messages.value[messages.value.length - 1]
   await scrollToBottom()
 
   try {
-    const response = await request.post('/chat/message', {
-      conversationId: currentConversationId.value,
-      msg: text
-    })
-    messages.value.pop()
-
-    if (response.code === 200) {
-      const { conversationId, answer } = response.data
-      currentConversationId.value = conversationId
-      messages.value.push({ role: 'ai', content: answer })
-      // 发送成功后刷新会话列表
-      await fetchConversations()
-    } else {
-      messages.value.push({
-        role: 'ai',
-        content: `调用异常：${response.message || '后端返回非200状态码'}`
+    const response = await fetch('http://localhost:8080/chat/message', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': localStorage.getItem('token') || ''
+      },
+      body: JSON.stringify({
+        conversationId: currentConversationId.value,
+        msg: text
       })
+    })
+
+    if (!response.ok || !response.body) {
+      aiMsg.content = `请求失败：HTTP ${response.status}`
+      isLoading.value = false
+      await scrollToBottom()
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+
+      let currentEvent = ''
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          currentEvent = line.slice(6).trim()
+        } else if (line.startsWith('data:')) {
+          const raw = line.slice(5).trim()
+          let parsed
+          try {
+            parsed = JSON.parse(raw)
+          } catch {
+            parsed = null
+          }
+          if (currentEvent === 'message') {
+            aiMsg.content += parsed?.content ?? raw
+            await scrollToBottom()
+          } else if (currentEvent === 'done') {
+            currentConversationId.value = parsed?.conversationId ?? raw
+            await fetchConversations()
+            isLoading.value = false
+          } else if (currentEvent === 'error') {
+            aiMsg.content = `错误：${parsed?.message ?? raw}`
+            isLoading.value = false
+          }
+          currentEvent = ''
+        }
+      }
     }
   } catch (error) {
-    messages.value.pop()
-    messages.value.push({
-      role: 'ai',
-      content: `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}`
-    })
+    aiMsg.content = `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}`
   } finally {
     isLoading.value = false
     await scrollToBottom()
