@@ -1,9 +1,25 @@
 <template>
   <div class="workspace-layout">
-    
+
     <div class="agent-pane">
       <div class="pane-header left-header">
         <div class="title">Tech-Brain Agent</div>
+        <button class="new-conv-btn" @click="startNewConversation">+ 新会话</button>
+      </div>
+
+      <!-- 会话列表区域 -->
+      <div class="conversation-list" v-if="conversations.length > 0">
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          class="conv-item"
+          :class="{ active: conv.id === currentConversationId }"
+          @click="loadConversation(conv.id)"
+          :title="conv.title || '新会话'"
+        >
+          <span class="conv-icon">💬</span>
+          <span class="conv-title">{{ conv.title || '新会话' }}</span>
+        </div>
       </div>
 
       <div class="chat-body" ref="chatBodyRef">
@@ -11,7 +27,7 @@
           <div class="avatar" v-if="msg.role === 'ai'">✨</div>
           <div class="msg-content markdown-body" :class="msg.role">
             <div v-if="msg.role === 'user'">{{ msg.content }}</div>
-            
+
             <div v-else-if="index === 0">
               <div v-html="parseMarkdown(msg.content)"></div>
             </div>
@@ -28,7 +44,7 @@
 
       <div class="input-dock">
         <div class="gemini-input-wrapper">
-        <textarea 
+        <textarea
         ref="textareaRef"
         v-model="userInput"
         placeholder="输入给 Tech-Brain 的指令..."
@@ -37,9 +53,8 @@
         @input="adjustHeight"
         @keydown.enter.prevent="handleSend"
         ></textarea>
-          
+
           <div class="input-actions-right">
-            <!-- <span class="model-selector">保存</span> -->
             <button class="send-btn" @click="handleSend">➤</button>
           </div>
         </div>
@@ -48,11 +63,11 @@
     </div>
 
     <div class="extension-pane">
-      
+
       <div class="pane-header right-header">
        <div class="header-actions" style="display: flex; align-items: center; gap: 15px;">
           <span class="icon-btn" title="菜单" @click="isDrawerVisible = !isDrawerVisible">≡</span>
-          
+
           <template v-if="notesViewRef && !notesViewRef.isManageMode">
             <span class="action-text-btn" @click="triggerAddNote">➕ 新建</span>
             <span class="action-text-btn" @click="notesViewRef.toggleManageMode()">编辑</span>
@@ -63,7 +78,7 @@
             <span class="action-text-btn danger" @click="notesViewRef.batchDeleteNotes()">删除 ({{ notesViewRef.selectedIds.length }})</span>
           </template>
         </div>
-        
+
        <div class="right-configs">
   <el-button link class="theme-toggle-btn" @click="toggleTheme">
     <el-icon v-if="isDark" :size="20"><Sunny /></el-icon>
@@ -78,10 +93,10 @@
     </el-avatar>
   </div>
 </template>
-    
-    <ProfileCard 
-      :userInfo="userInfo" 
-      @logout="handleLogout" 
+
+    <ProfileCard
+      :userInfo="userInfo"
+      @logout="handleLogout"
       @open-settings="goToProfile"
     />
   </el-popover>
@@ -89,7 +104,7 @@
       </div>
 
       <div class="extension-content" style="position: relative; overflow: hidden; display: flex; flex-direction: column;">
-        
+
         <el-drawer
           v-model="isDrawerVisible"
           direction="ltr"
@@ -102,7 +117,7 @@
             <div class="drawer-section" style="margin-top: 20px;">
               <div class="menu-item active"><span class="icon">📝</span> 全部笔记</div>
             </div>
-            
+
             <div class="drawer-footer">
               <div class="menu-item"><span class="icon">⚙</span> 设置和帮助</div>
             </div>
@@ -118,37 +133,97 @@
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
-import { Sunny, Moon } from '@element-plus/icons-vue' // 清理了不需要的 Close 和 Back
+import { Sunny, Moon } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { marked } from 'marked'
 
-// 导入刚刚创建的子组件
 import NotesView from './NotesView.vue'
 
 import { useRouter } from 'vue-router'
-import ProfileCard from '@/components/ProfileCard.vue' // 💡 引入新文件
+import ProfileCard from '@/components/ProfileCard.vue'
 
 const router = useRouter()
 
-// 1. 初始状态可以设为空，等待后端数据覆盖
 const userInfo = ref({
   name: '',
-  username: '', 
-  avatar: '', 
+  username: '',
+  avatar: '',
   level: 1
 })
 
-// 2. 页面加载时请求数据
-onMounted(async () => {
+// ================= 会话管理状态 =================
+const currentConversationId = ref(null)
+const conversations = ref([])
+const conversationLoading = ref(false)
+
+const WELCOME_MSG = { role: 'ai', content: '###  欢迎回来，哥哥！\n\n我是你的专属小助理 **02**' }
+
+// 获取会话列表
+const fetchConversations = async () => {
   try {
-    // 注意：这里的路径请保持和您 ProfileView 里写的一致（比如 '/info' 或 '/user/info'）
-    const res = await request.get('/info') 
+    const res = await request.get('/conversation/list')
+    if (res.code === 200 && res.data) {
+      conversations.value = res.data
+    }
+  } catch (error) {
+    console.warn('获取会话列表失败，已忽略', error)
+  }
+}
+
+// 加载指定会话的历史消息
+const loadConversation = async (conversationId) => {
+  if (conversationId === currentConversationId.value) return
+  currentConversationId.value = conversationId
+  conversationLoading.value = true
+  try {
+    const res = await request.get(`/conversation/${conversationId}/messages`)
+    if (res.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
+      const history = res.data.map(m => ({
+        role: m.role === 'assistant' ? 'ai' : 'user',
+        content: m.content
+      }))
+      messages.value = [{ ...WELCOME_MSG }, ...history]
+    } else {
+      messages.value = [{ ...WELCOME_MSG }]
+    }
+  } catch (error) {
+    console.warn('加载历史消息失败，已忽略', error)
+    messages.value = [{ ...WELCOME_MSG }]
+  } finally {
+    conversationLoading.value = false
+  }
+  await scrollToBottom()
+}
+
+// 新会话：清空 id、输入框，重置欢迎语
+const startNewConversation = () => {
+  currentConversationId.value = null
+  messages.value = [{ ...WELCOME_MSG }]
+  userInput.value = ''
+}
+
+onMounted(async () => {
+  // 加载用户信息
+  try {
+    const res = await request.get('/info')
     if (res.code === 200 && res.data) {
       userInfo.value = res.data
     }
   } catch (error) {
     console.error('获取用户信息失败', error)
   }
+
+  // 加载主题
+  const savedTheme = localStorage.getItem('tech-brain-theme')
+  if (savedTheme) {
+    isDark.value = savedTheme === 'dark'
+  } else {
+    isDark.value = !window.matchMedia('(prefers-color-scheme: light)').matches
+  }
+  updateBodyClass()
+
+  // 加载会话列表（失败不影响页面）
+  await fetchConversations()
 })
 
 const handleLogout = () => {
@@ -157,16 +232,14 @@ const handleLogout = () => {
   router.push('/login')
 }
 
-// 跳转个人中心的函数
 const goToProfile = () => {
   router.push('/profile')
 }
 
 const textareaRef = ref(null)
-// 触发保存 AI 消息的方法
+
 const handleSaveAiMsg = (content) => {
   if (notesViewRef.value) {
-    // 调用子组件的方法，并把 AI 的内容传过去
     notesViewRef.value.openAddNote(content)
   }
 }
@@ -174,36 +247,22 @@ const handleSaveAiMsg = (content) => {
 // ================= 组件引用与跨组件调用 =================
 const notesViewRef = ref(null)
 
-// 触发子组件的新建笔记弹窗
 const triggerAddNote = () => {
   if (notesViewRef.value) {
     notesViewRef.value.openAddNote()
-    // 为了体验更好，点完新建如果抽屉开着，顺手关掉抽屉
-    isDrawerVisible.value = false 
+    isDrawerVisible.value = false
   }
 }
 
-// 新增解析函数
 const parseMarkdown = (text) => {
   if (!text) return ''
   return marked(text)
 }
 
-// 控制侧边抽屉菜单的显示与隐藏
 const isDrawerVisible = ref(false)
 
 // ================= 主题切换逻辑 =================
 const isDark = ref(true)
-
-onMounted(() => {
-  const savedTheme = localStorage.getItem('tech-brain-theme')
-  if (savedTheme) {
-    isDark.value = savedTheme === 'dark'
-  } else {
-    isDark.value = !window.matchMedia('(prefers-color-scheme: light)').matches
-  }
-  updateBodyClass()
-})
 
 const toggleTheme = () => {
   isDark.value = !isDark.value
@@ -222,30 +281,23 @@ const updateBodyClass = () => {
 // ================= 核心：Agent 对话交互逻辑 =================
 const userInput = ref('')
 const chatBodyRef = ref(null)
-const isLoading = ref(false) 
+const isLoading = ref(false)
 
-const messages = ref([
-  { 
-    role: 'ai', 
-    content: '###  欢迎回来，哥哥！\n\n我是你的专属小助理 **02**' 
-  }
-])
+const messages = ref([{ ...WELCOME_MSG }])
 
 const handleSend = async () => {
   const text = userInput.value.trim()
-  if (!text || isLoading.value) return 
+  if (!text || isLoading.value) return
 
   messages.value.push({ role: 'user', content: text })
   userInput.value = ''
-  
-  // 💡 发送完毕后，等 DOM 清空渲染完毕，再把高度缩回单行
+
   nextTick(() => {
     if (textareaRef.value) {
       textareaRef.value.style.height = 'auto'
     }
   })
 
-  // 👇 下面这些核心代码原本被大括号挡在门外了，现在全部请回函数内！
   await scrollToBottom()
 
   isLoading.value = true
@@ -253,42 +305,41 @@ const handleSend = async () => {
   await scrollToBottom()
 
   try {
-    const response = await request.get('/chat', {
-      params: { msg: text }
+    const response = await request.post('/chat/message', {
+      conversationId: currentConversationId.value,
+      msg: text
     })
     messages.value.pop()
 
-    // 顺手帮主公脱掉了这里多余的 .data 外套
     if (response.code === 200) {
-      messages.value.push({ role: 'ai', content: response.data })
+      const { conversationId, answer } = response.data
+      currentConversationId.value = conversationId
+      messages.value.push({ role: 'ai', content: answer })
+      // 发送成功后刷新会话列表
+      await fetchConversations()
     } else {
-      messages.value.push({ 
-        role: 'ai', 
-        content: `调用异常：${response.message || '后端返回非200状态码'}` 
+      messages.value.push({
+        role: 'ai',
+        content: `调用异常：${response.message || '后端返回非200状态码'}`
       })
     }
   } catch (error) {
     messages.value.pop()
-    messages.value.push({ 
-      role: 'ai', 
-      content: `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}` 
+    messages.value.push({
+      role: 'ai',
+      content: `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}`
     })
   } finally {
     isLoading.value = false
     await scrollToBottom()
   }
-} 
- 
+}
+
 const adjustHeight = () => {
-  // 等 DOM 真正把文字渲染换行后，再去算高度！
   nextTick(() => {
     const textarea = textareaRef.value
     if (!textarea) return
-    
-    // 1. 先变回 auto，释放空间
     textarea.style.height = 'auto'
-    
-    // 2. 拿到的 scrollHeight 绝对是换行后的真实高度！
     textarea.style.height = textarea.scrollHeight + 'px'
   })
 }
@@ -335,13 +386,84 @@ const scrollToBottom = async () => {
 .left-header {
   border-bottom: 1px solid var(--tb-color-border);
   font-weight: bold;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.new-conv-btn {
+  background: transparent;
+  border: 1px solid var(--tb-color-border);
+  color: var(--tb-color-text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+.new-conv-btn:hover {
+  color: var(--tb-color-primary);
+  border-color: var(--tb-color-primary);
+}
+
+/* ================= 会话列表（横向滚动） ================= */
+.conversation-list {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--tb-color-border);
+  scrollbar-width: none; /* Firefox */
+}
+.conversation-list::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  max-width: 130px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--tb-color-border);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--tb-color-text-secondary);
+  background-color: transparent;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.conv-item:hover {
+  background-color: var(--tb-color-bg-input);
+  color: var(--tb-color-text-primary);
+}
+.conv-item.active {
+  border-color: var(--tb-color-primary);
+  color: var(--tb-color-primary);
+  background-color: var(--tb-color-bg-input);
+  font-weight: 500;
+}
+.conv-icon {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.conv-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-body {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  padding-bottom: 130px; 
+  padding-bottom: 130px;
 }
 
 .msg-row {
@@ -383,20 +505,17 @@ const scrollToBottom = async () => {
   background-color: var(--tb-color-bg-input);
   border-radius: 20px;
   display: flex;
-  align-items: flex-end; /* 确保发送按钮永远在右下角 */
+  align-items: flex-end;
   padding: 10px 15px;
   gap: 10px;
-  border: 1px solid transparent; 
+  border: 1px solid transparent;
   transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .gemini-input-wrapper:focus-within {
-  border-color: #409eff; 
+  border-color: #409eff;
   box-shadow: 0 4px 15px rgba(64, 158, 255, 0.2);
-  /* 去掉位移，主打一个稳如泰山的发光 */
 }
-
-
 
 .custom-textarea {
   flex: 1;
@@ -405,25 +524,18 @@ const scrollToBottom = async () => {
   color: var(--tb-color-text-primary);
   font-size: 15px;
   line-height: 1.5;
-  
-  /* 💡 核心魔法开始 */
-  min-height: 24px;      /* 初始单行高度 */
-  max-height: 150px;     /* 限制最大高度（大约 6 行） */
-  overflow-y: auto;      /* 超过 max-height 后自动出现滚动条 */
-  /* 💡 核心魔法结束 */
-
-  padding: 2px 0;        /* 极小的内边距，保证文字绝对不被削顶 */
+  min-height: 24px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 2px 0;
   margin: 0;
   resize: none;
   outline: none;
   box-sizing: border-box;
-
-  /* 💡 专门解决视频中连续输入 11111111 不换行的问题 */
   word-break: break-all;
   white-space: pre-wrap;
 }
 
-/* 顺手把滚动条美化成 Gemini 同款细条 */
 .custom-textarea::-webkit-scrollbar {
   width: 6px;
 }
@@ -470,8 +582,8 @@ const scrollToBottom = async () => {
   flex: 7;
   background-color: var(--tb-color-bg-page);
   display: flex;
-  flex-direction: column; 
-  height: 100vh; /* 强制满高 */
+  flex-direction: column;
+  height: 100vh;
   transition: background-color 0.3s ease;
 }
 
@@ -480,7 +592,7 @@ const scrollToBottom = async () => {
   display: flex;
   flex-direction: column;
   position: relative;
-  height: 100%; /* 强制向下撑满 */
+  height: 100%;
   overflow: hidden;
 }
 
@@ -521,7 +633,7 @@ const scrollToBottom = async () => {
   width: 32px;
   height: 32px;
   background-color: var(--tb-color-primary);
-  color: #fff; 
+  color: #fff;
   border-radius: 50%;
   text-align: center;
   line-height: 32px;
@@ -568,7 +680,7 @@ const scrollToBottom = async () => {
   border: 1px solid var(--tb-color-border);
   border-radius: 12px;
   padding: 15px 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); /* 淡淡的投影增加立体感 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .ai-msg-footer {
@@ -576,11 +688,11 @@ const scrollToBottom = async () => {
   justify-content: flex-end;
   margin-top: 15px;
   padding-top: 10px;
-  border-top: 1px dashed var(--tb-color-border); /* 虚线分割线 */
+  border-top: 1px dashed var(--tb-color-border);
 }
 
 .save-action-btn {
-  color: #ff4d4f; /* 醒目的红色 */
+  color: #ff4d4f;
   font-size: 14px;
   cursor: pointer;
   transition: opacity 0.2s;

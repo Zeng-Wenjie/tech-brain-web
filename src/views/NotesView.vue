@@ -239,7 +239,8 @@ const saveNote = async () => {
     if (currentNoteId.value) {
       // 执行修改 (对应你的 @PutMapping)
       // 执行新增 (对接你最新写的双写接口)
-      const res = await request.post('/article', {
+      const res = await request.put('/article', {
+        id: currentNoteId.value,
         title: newNote.value.title,
         content: newNote.value.content
       })
