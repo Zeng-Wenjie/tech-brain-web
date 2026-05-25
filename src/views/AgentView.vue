@@ -63,6 +63,31 @@
       </div>
     </div>
 
+    <!-- AI 总结弹窗（聊天触发） -->
+    <el-dialog
+      v-model="summaryDialogVisible"
+      title="AI总结"
+      width="640px"
+      :append-to-body="true"
+      class="custom-dialog"
+      @close="onSummaryDialogClose"
+    >
+      <div v-if="summaryLoading" class="summary-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>AI 正在总结中...</span>
+      </div>
+      <template v-else>
+        <div v-if="summarySourceName" class="summary-topic">主题：{{ summarySourceName }}</div>
+        <div class="summary-content markdown-body" v-html="parseMarkdown(summaryContent)"></div>
+      </template>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="onSummaryDialogClose">关闭</el-button>
+          <el-button type="primary" :disabled="summaryLoading || !summaryContent" @click="copySummaryFromChat">复制总结</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
     <div class="extension-pane">
 
       <div class="pane-header right-header">
@@ -134,7 +159,7 @@
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
-import { Sunny, Moon } from '@element-plus/icons-vue'
+import { Sunny, Moon, Loading } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import request from '@/utils/request'
 import { marked } from 'marked'
@@ -305,6 +330,88 @@ const updateBodyClass = () => {
   }
 }
 
+// ================= AI 总结弹窗状态 =================
+const summaryDialogVisible = ref(false)
+const summaryLoading = ref(false)
+const summarySourceName = ref('')
+const summaryContent = ref('')
+const summaryArticleId = ref(null)
+const summaryType = ref('')
+const pendingSummaryFromChat = ref(false)
+const summaryDialogManuallyClosed = ref(false)
+
+const isSummaryIntent = (msg) => {
+  const intentWords = ['总结', 'AI总结', '整理成要点', '提炼要点', '面试话术', '概括', '摘要']
+  const targetWords = ['第', '篇', '文章', '笔记', 'note', 'article']
+  return intentWords.some(k => msg.includes(k)) && targetWords.some(k => msg.includes(k))
+}
+
+const handleSummaryResult = (raw) => {
+  if (!raw) return
+  let data
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return
+  }
+  if (data.type !== 'article_summary') return
+
+  pendingSummaryFromChat.value = false
+
+  if (data.success !== true) {
+    summaryLoading.value = false
+    summaryDialogVisible.value = false
+    ElMessage.warning(data.chatMessage || '总结失败')
+    return
+  }
+
+  if (!data.summary) {
+    summaryLoading.value = false
+    summaryDialogVisible.value = false
+    ElMessage.warning('总结内容为空')
+    return
+  }
+
+  summarySourceName.value = data.title || ''
+  summaryContent.value = data.summary
+  summaryArticleId.value = data.articleId ?? null
+  summaryType.value = data.summaryType || 'normal'
+  summaryLoading.value = false
+
+  if (!summaryDialogManuallyClosed.value) {
+    summaryDialogVisible.value = true
+  } else {
+    ElMessage.success('总结完成，可重新打开查看')
+  }
+}
+
+const onSummaryDialogClose = () => {
+  if (summaryLoading.value) {
+    summaryDialogManuallyClosed.value = true
+  }
+  summaryDialogVisible.value = false
+}
+
+const clearSummaryState = () => {
+  summarySourceName.value = ''
+  summaryContent.value = ''
+  summaryArticleId.value = null
+  summaryType.value = ''
+  summaryLoading.value = false
+  pendingSummaryFromChat.value = false
+  summaryDialogManuallyClosed.value = false
+}
+
+const copySummaryFromChat = async () => {
+  if (!summaryContent.value) return
+  try {
+    await navigator.clipboard.writeText(summaryContent.value)
+    ElMessage.success('复制成功')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
 // ================= 核心：Agent 对话交互逻辑 =================
 const userInput = ref('')
 const chatBodyRef = ref(null)
@@ -327,13 +434,25 @@ const handleSend = async () => {
 
   await scrollToBottom()
 
+  // 总结意图判断：先打开 loading 弹窗
+  if (isSummaryIntent(text)) {
+    pendingSummaryFromChat.value = true
+    summaryDialogManuallyClosed.value = false
+    summaryLoading.value = true
+    summaryContent.value = ''
+    summarySourceName.value = ''
+    summaryType.value = ''
+    summaryArticleId.value = null
+    summaryDialogVisible.value = true
+  }
+
   isLoading.value = true
   messages.value.push({ role: 'ai', content: '' })
   const aiMsg = messages.value[messages.value.length - 1]
   await scrollToBottom()
 
   try {
-    const response = await fetch('http://localhost:8080/chat/message', {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat/message`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -348,6 +467,11 @@ const handleSend = async () => {
     if (!response.ok || !response.body) {
       aiMsg.content = `请求失败：HTTP ${response.status}`
       isLoading.value = false
+      if (pendingSummaryFromChat.value) {
+        pendingSummaryFromChat.value = false
+        summaryLoading.value = false
+        summaryDialogVisible.value = false
+      }
       await scrollToBottom()
       return
     }
@@ -383,9 +507,23 @@ const handleSend = async () => {
             currentConversationId.value = parsed?.conversationId ?? raw
             await fetchConversations()
             isLoading.value = false
+            // done 兜底：如果总结意图还在 pending，说明后端未返回 summary_result
+            if (pendingSummaryFromChat.value) {
+              pendingSummaryFromChat.value = false
+              summaryLoading.value = false
+              summaryDialogVisible.value = false
+              ElMessage.warning('未收到总结结果，请稍后重试')
+            }
           } else if (currentEvent === 'error') {
             aiMsg.content = `错误：${parsed?.message ?? raw}`
             isLoading.value = false
+            if (pendingSummaryFromChat.value) {
+              pendingSummaryFromChat.value = false
+              summaryLoading.value = false
+              summaryDialogVisible.value = false
+            }
+          } else if (currentEvent === 'summary_result') {
+            handleSummaryResult(raw)
           }
           currentEvent = ''
         }
@@ -393,6 +531,11 @@ const handleSend = async () => {
     }
   } catch (error) {
     aiMsg.content = `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}`
+    if (pendingSummaryFromChat.value) {
+      pendingSummaryFromChat.value = false
+      summaryLoading.value = false
+      summaryDialogVisible.value = false
+    }
   } finally {
     isLoading.value = false
     await scrollToBottom()
@@ -804,5 +947,34 @@ const scrollToBottom = async () => {
 }
 .action-text-btn.danger:hover {
   color: #ff8989;
+}
+
+/* ================= AI 总结弹窗 ================= */
+.summary-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 0;
+  color: var(--tb-color-text-secondary);
+  font-size: 14px;
+}
+.summary-loading .el-icon {
+  font-size: 28px;
+  color: var(--tb-color-primary);
+}
+.summary-topic {
+  font-size: 13px;
+  color: var(--tb-color-text-secondary);
+  margin-bottom: 12px;
+}
+.summary-content {
+  max-height: 480px;
+  overflow-y: auto;
+  line-height: 1.8;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
