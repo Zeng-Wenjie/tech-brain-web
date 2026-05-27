@@ -5,8 +5,10 @@
     <aside class="tb-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <!-- Logo + 折叠按钮 -->
       <div class="sidebar-logo">
-        <div class="logo-icon"><span>TB</span></div>
-        <span class="logo-text" v-show="!sidebarCollapsed">Tech-Brain</span>
+        <div class="logo-home" title="返回主页" @click="goHome">
+          <div class="logo-icon"><span>TB</span></div>
+          <span class="logo-text" v-show="!sidebarCollapsed">Tech-Brain</span>
+        </div>
         <el-icon
           class="sidebar-toggle"
           :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
@@ -118,6 +120,13 @@
         <div class="home-center">
           <div class="home-greeting">你好，欢迎来到 Tech-Brain</div>
           <div class="home-sub">你的专属 AI 技术知识助理，开始你的第一个对话吧</div>
+          <div class="home-prompts-header">
+            <span class="home-prompts-label">猜你想问</span>
+            <span class="home-prompts-refresh" @click="refreshPrompts">
+              <el-icon><RefreshRight /></el-icon>
+              换一批
+            </span>
+          </div>
           <div class="home-prompts">
             <div
               v-for="p in quickPrompts"
@@ -225,26 +234,57 @@
     <!-- ═══════════════ AI 总结弹窗 ═══════════════ -->
     <el-dialog
       v-model="summaryDialogVisible"
-      title="AI 总结"
-      width="600px"
+      width="640px"
       :append-to-body="true"
-      class="tb-dialog"
+      :show-close="false"
+      class="tb-summary-dialog"
       @open="onDialogOpen"
       @close="onSummaryDialogClose"
     >
-      <div v-if="summaryLoading" class="dialog-loading">
+      <template #header>
+        <div class="summary-header">
+          <div class="summary-header-left">
+            <div class="summary-badge">
+              <el-icon><MagicStick /></el-icon>
+            </div>
+            <div class="summary-titles">
+              <div class="summary-title">AI 总结</div>
+              <div class="summary-subtitle">
+                {{ summarySourceName ? `来自《${summarySourceName}》` : 'AI 工具自动总结' }}
+              </div>
+            </div>
+          </div>
+          <el-icon class="summary-close" @click="onSummaryDialogClose"><Close /></el-icon>
+        </div>
+      </template>
+
+      <div v-if="summaryLoading" class="summary-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>AI 正在总结中...</span>
       </div>
-      <template v-else>
-        <div v-if="summarySourceName" class="summary-topic">主题：{{ summarySourceName }}</div>
-        <div class="summary-content markdown-body" v-html="parseMarkdown(summaryContent)"></div>
-      </template>
+      <div v-else class="summary-content markdown-body" v-html="parseMarkdown(summaryContent)"></div>
+
       <template #footer>
-        <el-button @click="onSummaryDialogClose">关闭</el-button>
-        <el-button type="primary" :disabled="summaryLoading || !summaryContent" @click="copySummaryFromChat">
-          复制总结
-        </el-button>
+        <div class="summary-footer">
+          <span class="summary-count" v-if="!summaryLoading && summaryContent">
+            {{ summaryContent.length }} 字
+          </span>
+          <span class="summary-footer-spacer"></span>
+          <el-button @click="onSummaryDialogClose">关闭</el-button>
+          <el-button :disabled="!summaryContent || summaryLoading" @click="copySummaryFromChat">
+            <el-icon><CopyDocument /></el-icon>
+            <span style="margin-left: 4px;">复制</span>
+          </el-button>
+          <el-button
+            type="primary"
+            :disabled="!summaryContent || summaryLoading || summarySaving"
+            :loading="summarySaving"
+            @click="saveSummaryAsNoteFromChat"
+          >
+            <el-icon v-if="!summarySaving"><DocumentAdd /></el-icon>
+            <span style="margin-left: 4px;">保存为新笔记</span>
+          </el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -259,7 +299,7 @@ import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import {
   EditPen, Notebook, TrendCharts, DataAnalysis, User, UserFilled,
   MoreFilled, SwitchButton, Promotion, Share, CopyDocument, Loading,
-  Expand, Fold
+  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -277,6 +317,10 @@ const sidebarCollapsed = ref(localStorage.getItem('tb:sidebar-collapsed') === '1
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
   localStorage.setItem('tb:sidebar-collapsed', sidebarCollapsed.value ? '1' : '0')
+}
+function goHome() {
+  currentView.value = 'home'
+  currentConversationId.value = null
 }
 
 // ─── 用户信息 ───────────────────────────────────────────
@@ -307,12 +351,188 @@ const currentChatTitle = computed(() => {
 })
 
 // ─── 快捷 Prompt ───────────────────────────────────────
-const quickPrompts = [
-  { text: '讲解 Redis 缓存击穿与雪崩的解决方案', tag: '技术知识' },
-  { text: '帮我总结 Spring Boot 自动装配原理', tag: '知识总结' },
-  { text: '出 5 道 JVM 面试题并给出答案', tag: '面试辅助' },
-  { text: '解释 MySQL 联合索引最左前缀原则', tag: '数据库' }
+const PROMPT_POOL = [
+  // ── Java 基础 ─────────────────────────────────
+  { text: '说说 == 和 equals 的区别，String 为什么重写 equals', tag: 'Java 基础' },
+  { text: 'final、finally、finalize 三者的区别', tag: 'Java 基础' },
+  { text: '深拷贝和浅拷贝的区别，怎么实现深拷贝', tag: 'Java 基础' },
+  { text: '为什么 String 是不可变的，有什么好处', tag: 'Java 基础' },
+  { text: 'StringBuilder 和 StringBuffer 的区别', tag: 'Java 基础' },
+  { text: '接口和抽象类的区别，什么时候用哪个', tag: 'Java 基础' },
+  { text: '泛型擦除是什么，为什么 List<Integer> 不能转 List<Object>', tag: 'Java 基础' },
+  { text: '反射的原理和应用场景，有什么性能问题', tag: 'Java 基础' },
+  { text: '动态代理 JDK Proxy 和 CGLIB 的区别', tag: 'Java 基础' },
+  { text: '说说 Java 异常体系，受检异常和非受检异常', tag: 'Java 基础' },
+
+  // ── 集合源码 ──────────────────────────────────
+  { text: '为什么 HashMap 在 Java 8 引入红黑树', tag: '集合源码' },
+  { text: 'HashMap 的扩容机制和扩容为什么是 2 倍', tag: '集合源码' },
+  { text: 'ConcurrentHashMap 1.7 和 1.8 的区别', tag: '集合源码' },
+  { text: 'HashMap 和 Hashtable 的区别', tag: '集合源码' },
+  { text: '对比 ArrayList 和 LinkedList 的底层差异', tag: '集合源码' },
+  { text: 'ArrayList 扩容机制详解', tag: '集合源码' },
+  { text: 'CopyOnWriteArrayList 的原理和适用场景', tag: '集合源码' },
+  { text: 'TreeMap 底层红黑树的实现思路', tag: '集合源码' },
+  { text: 'LinkedHashMap 怎么实现 LRU 缓存', tag: '集合源码' },
+  { text: 'fail-fast 和 fail-safe 机制的区别', tag: '集合源码' },
+
+  // ── 并发编程 ──────────────────────────────────
+  { text: 'ThreadLocal 的实现原理和内存泄漏问题', tag: '并发编程' },
+  { text: 'Synchronized 和 ReentrantLock 怎么选', tag: '并发编程' },
+  { text: 'volatile 关键字的作用和实现原理', tag: '并发编程' },
+  { text: 'AQS 原理详解，谁基于它实现的', tag: '并发编程' },
+  { text: 'CAS 是什么，怎么解决 ABA 问题', tag: '并发编程' },
+  { text: 'Synchronized 的锁升级过程', tag: '并发编程' },
+  { text: 'ThreadPoolExecutor 的核心参数和工作流程', tag: '并发编程' },
+  { text: '线程池拒绝策略有哪些，怎么自定义', tag: '并发编程' },
+  { text: 'CountDownLatch、CyclicBarrier、Semaphore 的区别', tag: '并发编程' },
+  { text: 'Java 内存模型 JMM 和 happens-before 规则', tag: '并发编程' },
+  { text: 'CompletableFuture 怎么实现异步编排', tag: '并发编程' },
+  { text: '死锁的 4 个必要条件，怎么避免和排查', tag: '并发编程' },
+  { text: '聊聊 ForkJoinPool 和工作窃取算法', tag: '并发编程' },
+
+  // ── JVM ──────────────────────────────────────
+  { text: '聊聊 JVM 的垃圾回收算法和收集器', tag: 'JVM' },
+  { text: 'JVM 内存结构分区，每个区放什么', tag: 'JVM' },
+  { text: '类加载过程的 5 个阶段', tag: 'JVM' },
+  { text: '双亲委派模型，怎么打破它', tag: 'JVM' },
+  { text: 'CMS 和 G1 收集器的对比', tag: 'JVM' },
+  { text: 'ZGC 的低延迟是怎么做到的', tag: 'JVM' },
+  { text: '什么是 GC Root，可达性分析详解', tag: 'JVM' },
+  { text: 'Full GC 触发的几种场景', tag: 'JVM' },
+  { text: '常用的 JVM 调优参数有哪些', tag: 'JVM' },
+  { text: '逃逸分析和栈上分配的原理', tag: 'JVM' },
+  { text: '出 5 道 JVM 面试题并给出答案', tag: 'JVM' },
+
+  // ── Spring / Spring Boot ──────────────────────
+  { text: '帮我总结 Spring Boot 自动装配原理', tag: 'Spring' },
+  { text: 'Spring Bean 的生命周期', tag: 'Spring' },
+  { text: 'Spring IOC 和 DI 是什么关系', tag: 'Spring' },
+  { text: '讲讲 Spring 事务传播行为的 7 种类型', tag: 'Spring' },
+  { text: 'Spring 事务什么情况下会失效', tag: 'Spring' },
+  { text: 'Spring AOP 的实现原理和使用场景', tag: 'Spring' },
+  { text: 'Spring 怎么解决循环依赖，三级缓存', tag: 'Spring' },
+  { text: 'Spring Boot Starter 的工作原理', tag: 'Spring' },
+  { text: '@Resource 和 @Autowired 的区别', tag: 'Spring' },
+  { text: 'Spring MVC 一次请求的处理流程', tag: 'Spring' },
+  { text: 'Bean 的作用域有哪几种', tag: 'Spring' },
+  { text: 'BeanFactory 和 FactoryBean 的区别', tag: 'Spring' },
+
+  // ── Spring Cloud ──────────────────────────────
+  { text: 'Spring Cloud 五大核心组件分别是什么', tag: 'Spring Cloud' },
+  { text: 'Eureka 和 Nacos 注册中心的区别', tag: 'Spring Cloud' },
+  { text: 'Nacos 的 AP 和 CP 模式怎么切换', tag: 'Spring Cloud' },
+  { text: 'OpenFeign 的工作原理和动态代理', tag: 'Spring Cloud' },
+  { text: 'Ribbon 负载均衡策略有哪几种', tag: 'Spring Cloud' },
+  { text: 'Hystrix 和 Sentinel 的区别', tag: 'Spring Cloud' },
+  { text: '熔断、降级、限流的区别和实际场景', tag: 'Spring Cloud' },
+  { text: 'Sentinel 流控规则和热点参数限流', tag: 'Spring Cloud' },
+  { text: '聊聊 Spring Cloud Gateway 的过滤器链', tag: 'Spring Cloud' },
+  { text: 'Gateway 和 Zuul 的区别', tag: 'Spring Cloud' },
+  { text: 'Seata 的 AT、TCC、SAGA 模式对比', tag: 'Spring Cloud' },
+  { text: '分布式事务有哪些解决方案', tag: 'Spring Cloud' },
+  { text: '微服务架构下怎么做链路追踪', tag: 'Spring Cloud' },
+  { text: 'Config Server 的配置热更新原理', tag: 'Spring Cloud' },
+  { text: '分布式锁的三种实现：DB、Redis、ZK', tag: 'Spring Cloud' },
+
+  // ── MySQL / SQL 优化 ──────────────────────────
+  { text: '解释 MySQL 联合索引最左前缀原则', tag: 'SQL 优化' },
+  { text: '什么情况下索引会失效', tag: 'SQL 优化' },
+  { text: 'EXPLAIN 执行计划怎么看，关键字段含义', tag: 'SQL 优化' },
+  { text: 'type 字段从 all 到 ref 各代表什么', tag: 'SQL 优化' },
+  { text: '覆盖索引和回表是什么', tag: 'SQL 优化' },
+  { text: '索引下推 ICP 的原理和作用', tag: 'SQL 优化' },
+  { text: '什么是慢 SQL，怎么定位和优化', tag: 'SQL 优化' },
+  { text: 'count(*)、count(1)、count(列) 谁更快', tag: 'SQL 优化' },
+  { text: 'limit 深分页的优化方案', tag: 'SQL 优化' },
+  { text: 'B+ 树和 B 树的区别，为什么 MySQL 用 B+ 树', tag: 'SQL 优化' },
+  { text: '聚簇索引和非聚簇索引的区别', tag: 'SQL 优化' },
+  { text: 'in、exists、join 三种关联查询的取舍', tag: 'SQL 优化' },
+  { text: 'MySQL 怎么设计一张大表的字段类型', tag: 'SQL 优化' },
+  { text: 'where 和 having 的执行顺序', tag: 'SQL 优化' },
+  { text: 'union 和 union all 的区别', tag: 'SQL 优化' },
+  { text: '分库分表的几种策略和热点问题', tag: 'SQL 优化' },
+  { text: '一条 SQL 在 MySQL 里的完整执行流程', tag: 'SQL 优化' },
+
+  // ── MySQL 原理 ───────────────────────────────
+  { text: 'MySQL InnoDB 的 MVCC 是怎么实现的', tag: 'MySQL 原理' },
+  { text: '事务的四种隔离级别和对应问题', tag: 'MySQL 原理' },
+  { text: 'redo log、undo log、binlog 三者作用', tag: 'MySQL 原理' },
+  { text: '两阶段提交是什么', tag: 'MySQL 原理' },
+  { text: '聊聊 InnoDB 的行锁、间隙锁、临键锁', tag: 'MySQL 原理' },
+  { text: 'RR 隔离级别下幻读真的解决了吗', tag: 'MySQL 原理' },
+  { text: 'Buffer Pool 的工作原理和 LRU 改造', tag: 'MySQL 原理' },
+  { text: 'MyISAM 和 InnoDB 的区别', tag: 'MySQL 原理' },
+  { text: 'MySQL 主从同步的实现机制', tag: 'MySQL 原理' },
+  { text: 'MySQL 主从延迟怎么处理', tag: 'MySQL 原理' },
+
+  // ── Redis ────────────────────────────────────
+  { text: '讲解 Redis 缓存击穿、穿透、雪崩的方案', tag: 'Redis' },
+  { text: 'Redis 持久化 RDB 和 AOF 怎么选', tag: 'Redis' },
+  { text: 'Redis 的 5 种基本数据结构和底层实现', tag: 'Redis' },
+  { text: 'Redis 为什么这么快', tag: 'Redis' },
+  { text: 'Redis 单线程模型和 IO 多路复用', tag: 'Redis' },
+  { text: 'Redis 的过期删除策略和内存淘汰策略', tag: 'Redis' },
+  { text: 'Redis 主从复制原理', tag: 'Redis' },
+  { text: 'Redis 哨兵和 Cluster 集群的区别', tag: 'Redis' },
+  { text: 'Redis 怎么实现分布式锁，Redisson 怎么做', tag: 'Redis' },
+  { text: 'Redis 大 key 问题怎么排查和处理', tag: 'Redis' },
+  { text: '缓存一致性的几种保证方案', tag: 'Redis' },
+  { text: 'Redis Stream 和消息队列对比', tag: 'Redis' },
+
+  // ── 消息队列 ──────────────────────────────────
+  { text: 'Kafka 怎么保证消息不丢失、不重复', tag: '消息队列' },
+  { text: 'Kafka 高吞吐量的秘密：零拷贝、批量、分区', tag: '消息队列' },
+  { text: 'RabbitMQ 和 Kafka 的应用场景对比', tag: '消息队列' },
+  { text: '消息队列怎么保证顺序消费', tag: '消息队列' },
+  { text: 'RocketMQ 的事务消息怎么实现', tag: '消息队列' },
+  { text: '消息积压了怎么处理', tag: '消息队列' },
+
+  // ── 分布式 / 系统设计 ─────────────────────────
+  { text: '什么是 CAP 理论？BASE 又是什么', tag: '分布式' },
+  { text: '一致性 hash 算法和虚拟节点', tag: '分布式' },
+  { text: '雪花算法 Snowflake 的实现原理', tag: '分布式' },
+  { text: '设计一个秒杀系统需要考虑哪些点', tag: '系统设计' },
+  { text: '设计一个短链系统', tag: '系统设计' },
+  { text: '设计一个排行榜系统', tag: '系统设计' },
+  { text: '设计一个分布式 ID 生成器', tag: '系统设计' },
+
+  // ── 计算机基础 ────────────────────────────────
+  { text: '讲解 TCP 三次握手和四次挥手', tag: '计算机网络' },
+  { text: 'TCP 和 UDP 的区别，分别用在哪', tag: '计算机网络' },
+  { text: 'HTTP 和 HTTPS 的区别，SSL 握手过程', tag: '计算机网络' },
+  { text: 'HTTP/1.1、HTTP/2、HTTP/3 的演进', tag: '计算机网络' },
+  { text: '从输入 URL 到页面渲染发生了什么', tag: '计算机网络' },
+
+  // ── 线上排查 / 实战 ──────────────────────────
+  { text: '怎么排查线上 CPU 飙高的问题', tag: '线上排查' },
+  { text: '怎么排查 OOM 异常', tag: '线上排查' },
+  { text: '线上接口慢，从哪几个层面排查', tag: '线上排查' },
+  { text: 'Arthas 常用命令场景', tag: '线上排查' },
+  { text: '内存泄漏和内存溢出的区别', tag: '线上排查' },
+
+  // ── 安全 / 其他 ───────────────────────────────
+  { text: 'OAuth2 四种授权模式分别用在什么场景', tag: '安全认证' },
+  { text: 'JWT 的结构和无状态认证流程', tag: '安全认证' },
+  { text: '怎么防御 XSS、CSRF、SQL 注入', tag: '安全认证' },
+  { text: '面试官问我 Docker 和虚拟机的区别', tag: '面试辅助' },
+  { text: 'MyBatis 一级缓存和二级缓存的区别', tag: '持久层' },
+  { text: 'MyBatis 的 #{} 和 ${} 区别', tag: '持久层' }
 ]
+
+function shuffle(arr) {
+  const a = arr.slice()
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+const quickPrompts = ref(shuffle(PROMPT_POOL).slice(0, 4))
+function refreshPrompts() {
+  quickPrompts.value = shuffle(PROMPT_POOL).slice(0, 4)
+}
 
 function usePrompt(text) {
   userInput.value = text
@@ -588,8 +808,33 @@ const summaryDialogVisible = ref(false)
 const summaryLoading = ref(false)
 const summarySourceName = ref('')
 const summaryContent = ref('')
+const summarySaving = ref(false)
 const pendingSummaryFromChat = ref(false)
 const summaryDialogManuallyClosed = ref(false)
+
+async function saveSummaryAsNoteFromChat() {
+  if (!summaryContent.value.trim()) return
+  summarySaving.value = true
+  const baseTitle = summarySourceName.value
+    ? `${summarySourceName.value} - 总结`
+    : 'AI 总结'
+  const title = baseTitle.length > 30 ? baseTitle.slice(0, 30) : baseTitle
+  try {
+    const res = await request.post('/save-note', { title, content: summaryContent.value })
+    if (res.code === 200 || res.code === 1) {
+      ElMessage.success('总结已保存为新笔记')
+      summaryDialogVisible.value = false
+      if (notesViewRef.value) notesViewRef.value.fetchNotes?.()
+      notesTotal.value = (notesTotal.value || 0) + 1
+    } else {
+      ElMessage.error(res.msg || res.message || '保存失败')
+    }
+  } catch {
+    ElMessage.error('保存失败，接口异常')
+  } finally {
+    summarySaving.value = false
+  }
+}
 
 const isSummaryIntent = (msg) => {
   const intentWords = ['总结', 'AI总结', '整理成要点', '提炼要点', '面试话术', '概括', '摘要']
@@ -710,6 +955,17 @@ onUnmounted(() => {
   padding: 0 14px;
   flex-shrink: 0;
 }
+.logo-home {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.logo-home:hover { background: #222; }
 
 .logo-icon {
   width: 28px;
@@ -951,6 +1207,32 @@ onUnmounted(() => {
   text-align: center;
   margin-bottom: 32px;
 }
+
+.home-prompts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+.home-prompts-label {
+  font-size: 12px;
+  color: #4b5263;
+  letter-spacing: 0.3px;
+}
+.home-prompts-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.home-prompts-refresh:hover { background: #252528; color: #a5b4fc; }
+.home-prompts-refresh .el-icon { font-size: 13px; }
 
 .home-prompts {
   display: grid;

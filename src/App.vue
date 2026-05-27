@@ -92,4 +92,125 @@ body, html {
   background: #1e1e22 !important;
   border-color: #2e2e32 !important;
 }
+
+/* ─── AI 总结弹窗：通用全局样式（NotesView / AgentView 共用） ─── */
+.tb-summary-dialog .el-dialog {
+  background: #1a1a1c !important;
+  border: 0.5px solid #2e2e32 !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.tb-summary-dialog .el-dialog__header {
+  background: linear-gradient(180deg, #1e1e22 0%, #1a1a1c 100%) !important;
+  border-bottom: 0.5px solid #2e2e32;
+  padding: 14px 18px !important;
+  margin: 0 !important;
+  cursor: move;
+}
+.tb-summary-dialog .el-dialog__body {
+  background: #1a1a1c !important;
+  padding: 20px 22px 8px !important;
+  color: #f1f3f8 !important;
+}
+.tb-summary-dialog .el-dialog__footer {
+  background: #1a1a1c !important;
+  border-top: 0.5px solid #2e2e32;
+  padding: 12px 18px !important;
+}
+.tb-summary-dialog .summary-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.tb-summary-dialog .summary-header-left {
+  display: flex; align-items: center; gap: 12px; min-width: 0;
+}
+.tb-summary-dialog .summary-badge {
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 18px; flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+}
+.tb-summary-dialog .summary-titles { min-width: 0; }
+.tb-summary-dialog .summary-title {
+  font-size: 15px; font-weight: 600; color: #ffffff; line-height: 1.2;
+}
+.tb-summary-dialog .summary-subtitle {
+  margin-top: 3px; font-size: 11px; color: #9ca3af;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 460px;
+}
+.tb-summary-dialog .summary-close {
+  font-size: 18px; color: #6b7280; cursor: pointer;
+  padding: 5px; border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.tb-summary-dialog .summary-close:hover { background: #252528; color: #fff; }
+.tb-summary-dialog .summary-content {
+  max-height: 55vh; overflow-y: auto;
+  font-size: 14.5px; line-height: 1.85;
+  color: #f1f3f8 !important;
+  padding-right: 4px;
+}
+.tb-summary-dialog .summary-content,
+.tb-summary-dialog .summary-content * { opacity: 1 !important; }
+.tb-summary-dialog .summary-content p,
+.tb-summary-dialog .summary-content li,
+.tb-summary-dialog .summary-content span,
+.tb-summary-dialog .summary-content div { color: #f1f3f8 !important; }
+.tb-summary-dialog .summary-content h1,
+.tb-summary-dialog .summary-content h2,
+.tb-summary-dialog .summary-content h3,
+.tb-summary-dialog .summary-content h4 {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  margin: 16px 0 8px !important;
+}
+.tb-summary-dialog .summary-content strong { color: #c4b5fd !important; font-weight: 600 !important; }
+.tb-summary-dialog .summary-content em { color: #e8eaf0 !important; }
+.tb-summary-dialog .summary-content code {
+  background: #252528 !important; color: #f0abfc !important;
+  padding: 1px 6px; border-radius: 4px; font-size: 13px;
+}
+.tb-summary-dialog .summary-content pre {
+  background: #252528 !important; border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto; margin: 10px 0;
+}
+.tb-summary-dialog .summary-content pre code {
+  background: transparent !important; padding: 0;
+  color: #f1f3f8 !important;
+}
+.tb-summary-dialog .summary-content::-webkit-scrollbar { width: 4px; }
+.tb-summary-dialog .summary-content::-webkit-scrollbar-thumb { background: #2e2e32; border-radius: 4px; }
+.tb-summary-dialog .summary-loading {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; padding: 50px 0;
+  color: #9ca3af; font-size: 13px;
+}
+.tb-summary-dialog .summary-loading .el-icon { font-size: 32px; color: #818cf8; }
+.tb-summary-dialog .summary-footer {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+}
+.tb-summary-dialog .summary-footer-spacer { flex: 1; }
+.tb-summary-dialog .summary-count { font-size: 11px; color: #6b7280; }
+.tb-summary-dialog .el-button {
+  background: #252528 !important;
+  border-color: #2e2e32 !important;
+  color: #e2e4e9 !important;
+}
+.tb-summary-dialog .el-button:hover {
+  background: #2e2e32 !important;
+  color: #ffffff !important;
+}
+.tb-summary-dialog .el-button--primary {
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important;
+  border-color: #6366f1 !important;
+  color: #fff !important;
+}
+.tb-summary-dialog .el-button--primary:hover { opacity: 0.9; }
+.tb-summary-dialog .el-button.is-disabled {
+  background: #1e1e22 !important;
+  color: #4b5263 !important;
+  border-color: #2e2e32 !important;
+  opacity: 0.7;
+}
 </style>

@@ -22,7 +22,6 @@
                       @click.stop="toggleSelectNote(note.id)"
                     ></div>
                     <template v-else>
-                      <el-icon class="edit-icon" @click.stop="openEditNote(note)"><Edit /></el-icon>
                       <el-icon class="delete-icon" @click.stop="deleteNote(note.id)"><Close /></el-icon>
                     </template>
                   </div>
@@ -58,7 +57,25 @@
         <div class="expanded-header">
           <div class="header-left">
             <el-button :icon="Back" circle @click="closeExpandedNote" class="back-btn"></el-button>
-            <h2 class="expanded-title">{{ expandedNote.title }}</h2>
+            <input
+              v-if="editingTitle"
+              ref="titleInputRef"
+              v-model="inlineTitle"
+              class="expanded-title-input"
+              maxlength="30"
+              @blur="commitTitle"
+              @keydown.enter.prevent="commitTitle"
+              @keydown.esc="cancelTitleEdit"
+            />
+            <h2
+              v-else
+              class="expanded-title"
+              title="双击标题可编辑"
+              @dblclick="startEditTitle"
+            >
+              {{ expandedNote.title }}
+            </h2>
+            <span v-if="inlineSaving" class="inline-saving">保存中…</span>
           </div>
           <div class="header-right">
             <el-button type="primary" :loading="summaryLoading" @click="summarizeNote(expandedNote)">
@@ -66,7 +83,24 @@
             </el-button>
           </div>
         </div>
-        <div class="expanded-body markdown-body" v-html="parseMarkdown(expandedNote.content)"></div>
+
+        <div
+          v-show="editingContent"
+          ref="vditorMountRef"
+          class="expanded-body-vditor"
+        ></div>
+        <div
+          v-if="!editingContent"
+          class="expanded-body markdown-body"
+          title="双击进入编辑（Ctrl+Enter 保存，Esc 取消）"
+          v-html="parseMarkdown(expandedNote.content)"
+          @dblclick="startEditContent"
+        ></div>
+        <div v-if="editingContent" class="editor-action-bar">
+          <span class="editor-hint">Ctrl+Enter 保存 · Esc 取消</span>
+          <el-button size="small" @click="cancelContentEdit">取消</el-button>
+          <el-button size="small" type="primary" @click="commitContent">保存</el-button>
+        </div>
       </div>
     </template>
 
@@ -107,21 +141,57 @@
     <!-- AI 总结弹窗 -->
     <el-dialog
       v-model="summaryDialogVisible"
-      title="AI 总结"
-      width="620px"
+      width="640px"
       :append-to-body="true"
+      :show-close="false"
       destroy-on-close
-      class="tb-note-dialog"
+      class="tb-summary-dialog"
       @open="onAnyDialogOpen"
     >
+      <template #header>
+        <div class="summary-header">
+          <div class="summary-header-left">
+            <div class="summary-badge">
+              <el-icon><MagicStick /></el-icon>
+            </div>
+            <div class="summary-titles">
+              <div class="summary-title">AI 总结</div>
+              <div class="summary-subtitle">
+                {{ summarySourceTitle ? `来自《${summarySourceTitle}》` : '基于当前笔记智能提炼' }}
+              </div>
+            </div>
+          </div>
+          <el-icon class="summary-close" @click="summaryDialogVisible = false"><Close /></el-icon>
+        </div>
+      </template>
+
       <div v-if="summaryLoading" class="summary-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>AI 正在总结中...</span>
       </div>
       <div v-else class="summary-content markdown-body" v-html="parseMarkdown(summaryContent)"></div>
+
       <template #footer>
-        <el-button @click="summaryDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :disabled="!summaryContent" @click="copySummary">复制总结</el-button>
+        <div class="summary-footer">
+          <span class="summary-count" v-if="!summaryLoading && summaryContent">
+            {{ summaryContent.length }} 字
+          </span>
+          <span class="summary-footer-spacer"></span>
+          <el-button @click="summaryDialogVisible = false">关闭</el-button>
+          <el-button :disabled="!summaryContent || summaryLoading" @click="copySummary">
+            <el-icon><CopyDocument /></el-icon>
+            <span style="margin-left: 4px;">复制</span>
+          </el-button>
+          <el-button
+            type="primary"
+            :disabled="!summaryContent || summaryLoading || summarySaving"
+            :loading="summarySaving"
+            @click="saveSummaryAsNote"
+          >
+            <el-icon v-if="!summarySaving"><DocumentAdd /></el-icon>
+            <span style="margin-left: 4px;">保存为新笔记</span>
+          </el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -129,13 +199,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, defineExpose, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, defineExpose, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Back, Edit, Loading } from '@element-plus/icons-vue'
+import { Close, Back, Loading, MagicStick, DocumentAdd, CopyDocument } from '@element-plus/icons-vue'
 import { nextTick } from 'vue'
 import request from '@/utils/request'
 import { marked } from 'marked'
 import { makeDraggable } from '@/utils/draggable'
+import Vditor from 'vditor'
+import 'vditor/dist/index.css'
 
 const emit = defineEmits(['total-change'])
 
@@ -156,6 +228,8 @@ const newNote = ref({ title: '', content: '' })
 const summaryDialogVisible = ref(false)
 const summaryLoading = ref(false)
 const summaryContent = ref('')
+const summarySourceTitle = ref('')
+const summarySaving = ref(false)
 
 const isManageMode = ref(false)
 const selectedIds = ref([])
@@ -211,13 +285,6 @@ const openAddNote = (initialContent = '') => {
   dialogTitle.value = '✨ 录入新知识'
   currentNoteId.value = null
   newNote.value = { title: '', content: initialContent }
-  dialogVisible.value = true
-}
-
-const openEditNote = (note) => {
-  dialogTitle.value = '✏️ 编辑笔记'
-  currentNoteId.value = note.id
-  newNote.value = { title: note.title, content: note.content }
   dialogVisible.value = true
 }
 
@@ -278,7 +345,136 @@ const deleteNote = (id) => {
 
 // ── 展开 / 收起 ────────────────────────────────────────
 const expandNote = (note) => { expandedNote.value = note }
-const closeExpandedNote = () => { expandedNote.value = null }
+const closeExpandedNote = () => {
+  // 若正在编辑则先保存
+  if (editingTitle.value) commitTitle()
+  if (editingContent.value) commitContent()
+  expandedNote.value = null
+}
+
+// ── 内联编辑（展开页双击直接打字） ─────────────────────
+const editingTitle = ref(false)
+const editingContent = ref(false)
+const inlineTitle = ref('')
+const inlineSaving = ref(false)
+const titleInputRef = ref(null)
+const vditorMountRef = ref(null)
+let vditorInstance = null
+
+function destroyVditor() {
+  if (vditorInstance) {
+    try { vditorInstance.destroy() } catch { /* noop */ }
+    vditorInstance = null
+  }
+}
+
+onBeforeUnmount(destroyVditor)
+
+function startEditTitle() {
+  if (!expandedNote.value) return
+  inlineTitle.value = expandedNote.value.title
+  editingTitle.value = true
+  nextTick(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  })
+}
+function cancelTitleEdit() { editingTitle.value = false }
+async function commitTitle() {
+  if (!editingTitle.value) return
+  const newTitle = inlineTitle.value.trim()
+  editingTitle.value = false
+  if (!newTitle) {
+    ElMessage.warning('标题不能为空')
+    return
+  }
+  if (newTitle === expandedNote.value.title) return
+  await persistNote({ title: newTitle, content: expandedNote.value.content })
+}
+
+function startEditContent() {
+  if (!expandedNote.value) return
+  editingContent.value = true
+  nextTick(() => initVditor(expandedNote.value.content))
+}
+function cancelContentEdit() {
+  editingContent.value = false
+  destroyVditor()
+}
+async function commitContent() {
+  if (!editingContent.value || !vditorInstance) return
+  const newContent = vditorInstance.getValue()
+  editingContent.value = false
+  destroyVditor()
+  if (!newContent.trim()) {
+    ElMessage.warning('内容不能为空')
+    return
+  }
+  if (newContent === expandedNote.value.content) return
+  await persistNote({ title: expandedNote.value.title, content: newContent })
+}
+
+function initVditor(initialMarkdown) {
+  destroyVditor()
+  if (!vditorMountRef.value) return
+  vditorInstance = new Vditor(vditorMountRef.value, {
+    mode: 'wysiwyg',
+    theme: 'dark',
+    height: '100%',
+    minHeight: 300,
+    placeholder: '开始编辑笔记...',
+    cache: { enable: false },
+    toolbarConfig: { pin: true },
+    toolbar: [
+      'headings', 'bold', 'italic', 'strike', '|',
+      'line', 'quote', 'list', 'ordered-list', 'check', '|',
+      'code', 'inline-code', 'link', 'table', '|',
+      'undo', 'redo'
+    ],
+    preview: {
+      hljs: { style: 'native' },
+      theme: { current: 'dark' }
+    },
+    counter: { enable: false },
+    after: () => {
+      vditorInstance.setValue(initialMarkdown || '')
+      vditorInstance.focus()
+    },
+    keydown: (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        cancelContentEdit()
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        commitContent()
+      }
+    }
+  })
+}
+
+async function persistNote({ title, content }) {
+  if (!expandedNote.value?.id) return
+  inlineSaving.value = true
+  try {
+    const res = await request.put('/article', { id: expandedNote.value.id, title, content })
+    if (res.code === 200) {
+      expandedNote.value.title = title
+      expandedNote.value.content = content
+      const idx = notes.value.findIndex(n => n.id === expandedNote.value.id)
+      if (idx > -1) {
+        notes.value[idx].title = title
+        notes.value[idx].content = content
+      }
+      ElMessage.success('已保存')
+    } else {
+      ElMessage.error(res.msg || '保存失败')
+    }
+  } catch {
+    ElMessage.error('保存失败，接口异常')
+  } finally {
+    inlineSaving.value = false
+  }
+}
 
 // ── AI 总结 ────────────────────────────────────────────
 const summarizeNote = async (note) => {
@@ -286,6 +482,7 @@ const summarizeNote = async (note) => {
   summaryDialogVisible.value = true
   summaryLoading.value = true
   summaryContent.value = ''
+  summarySourceTitle.value = note.title || ''
   try {
     const res = await request.post(`/article/ai/summary/${note.id}`)
     if (res.code === 200 || res.code === 1) {
@@ -311,6 +508,33 @@ const copySummary = async () => {
     ElMessage.success('总结已复制')
   } catch {
     ElMessage.error('复制失败')
+  }
+}
+
+const saveSummaryAsNote = async () => {
+  if (!summaryContent.value.trim()) return
+  summarySaving.value = true
+  const baseTitle = summarySourceTitle.value
+    ? `${summarySourceTitle.value} - 总结`
+    : 'AI 总结'
+  const title = baseTitle.length > 30 ? baseTitle.slice(0, 30) : baseTitle
+  try {
+    const res = await request.post('/save-note', {
+      title,
+      content: summaryContent.value
+    })
+    if (res.code === 200 || res.code === 1) {
+      ElMessage.success('总结已保存为新笔记')
+      summaryDialogVisible.value = false
+      currentPage.value = 1
+      fetchNotes()
+    } else {
+      ElMessage.error(res.msg || res.message || '保存失败')
+    }
+  } catch {
+    ElMessage.error('保存失败，接口异常')
+  } finally {
+    summarySaving.value = false
   }
 }
 
@@ -351,7 +575,7 @@ const batchDeleteNotes = () => {
   }).catch(() => {})
 }
 
-defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDeleteNotes })
+defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDeleteNotes, fetchNotes })
 </script>
 
 <style scoped>
@@ -485,7 +709,92 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   border-color: #2e2e32 !important;
   color: #9ca3af !important;
 }
-.expanded-title { margin: 0; font-size: 17px; font-weight: 500; color: #e2e4e9; }
+.expanded-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  color: #e2e4e9;
+  cursor: text;
+  user-select: none;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.expanded-title:hover { background: #252528; }
+
+.expanded-title-input {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  color: #e2e4e9;
+  background: #252528;
+  border: 0.5px solid #6366f1;
+  border-radius: 6px;
+  padding: 4px 8px;
+  outline: none;
+  min-width: 320px;
+}
+
+.inline-saving {
+  margin-left: 10px;
+  font-size: 11px;
+  color: #6366f1;
+}
+
+.expanded-body { cursor: text; }
+
+/* Vditor 编辑器容器 */
+.expanded-body-vditor {
+  flex: 1;
+  min-height: 0;
+  border-top: 0.5px solid #2e2e32;
+}
+:deep(.expanded-body-vditor.vditor) {
+  border: none !important;
+  border-radius: 0 !important;
+  height: 100% !important;
+}
+:deep(.expanded-body-vditor .vditor-toolbar) {
+  background: #1e1e22 !important;
+  border-bottom: 0.5px solid #2e2e32 !important;
+}
+:deep(.expanded-body-vditor .vditor-content) {
+  background: #1a1a1c !important;
+}
+:deep(.expanded-body-vditor .vditor-wysiwyg) {
+  background: #1a1a1c !important;
+}
+:deep(.expanded-body-vditor .vditor-reset) {
+  background: #1a1a1c !important;
+  color: #c9ccd6 !important;
+  font-size: 14px !important;
+  line-height: 1.8 !important;
+  padding: 20px 28px !important;
+}
+:deep(.expanded-body-vditor .vditor-reset strong) { color: #a5b4fc !important; }
+:deep(.expanded-body-vditor .vditor-reset code) {
+  background: #252528 !important;
+  color: #e879f9 !important;
+}
+:deep(.expanded-body-vditor .vditor-reset pre) {
+  background: #252528 !important;
+}
+:deep(.expanded-body-vditor .vditor-counter) { display: none !important; }
+
+.editor-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: #1e1e22;
+  border-top: 0.5px solid #2e2e32;
+  flex-shrink: 0;
+}
+.editor-hint {
+  flex: 1;
+  font-size: 12px;
+  color: #4b5263;
+}
 .expanded-body {
   flex: 1;
   padding: 24px 28px;
@@ -566,16 +875,147 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
 /* AI 总结弹窗内容 */
 .summary-loading {
   display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 12px; padding: 40px 0;
-  color: #4b5263; font-size: 14px;
+  justify-content: center; gap: 12px; padding: 50px 0;
+  color: #4b5263; font-size: 13px;
 }
-.summary-loading .el-icon { font-size: 28px; color: #6366f1; }
+.summary-loading .el-icon { font-size: 32px; color: #6366f1; }
 .summary-content {
-  max-height: 50vh; overflow-y: auto;
-  font-size: 14px; line-height: 1.8; color: #c9ccd6;
+  max-height: 55vh; overflow-y: auto;
+  font-size: 14.5px; line-height: 1.85;
+  color: #f1f3f8 !important;
+  opacity: 1 !important;
+  padding-right: 4px;
 }
+.summary-content :deep(*) { opacity: 1 !important; }
+.summary-content :deep(p),
+.summary-content :deep(li),
+.summary-content :deep(span),
+.summary-content :deep(div) { color: #f1f3f8 !important; }
+.summary-content :deep(h1),
+.summary-content :deep(h2),
+.summary-content :deep(h3),
+.summary-content :deep(h4) {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+.summary-content :deep(strong) { color: #c4b5fd !important; font-weight: 600 !important; }
+.summary-content :deep(em) { color: #e8eaf0 !important; }
 .summary-content::-webkit-scrollbar { width: 4px; }
 .summary-content::-webkit-scrollbar-thumb { background: #2e2e32; border-radius: 4px; }
+
+/* ─── AI 总结弹窗（新样式） ──────────────────────────── */
+:deep(.tb-summary-dialog .el-dialog) {
+  background: #1a1a1c !important;
+  border: 0.5px solid #2e2e32 !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+:deep(.tb-summary-dialog .el-dialog__header) {
+  background: linear-gradient(180deg, #1e1e22 0%, #1a1a1c 100%);
+  border-bottom: 0.5px solid #2e2e32;
+  padding: 14px 18px;
+  margin: 0;
+  cursor: move;
+}
+:deep(.tb-summary-dialog .el-dialog__body) {
+  background: #1a1a1c !important;
+  padding: 20px 22px 8px;
+  color: #f1f3f8;
+}
+:deep(.tb-summary-dialog .el-dialog__footer) {
+  background: #1a1a1c;
+  border-top: 0.5px solid #2e2e32;
+  padding: 12px 18px;
+}
+
+/* 自定义 header */
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.summary-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.summary-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+}
+.summary-titles { min-width: 0; }
+.summary-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e2e4e9;
+  line-height: 1.2;
+}
+.summary-subtitle {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #4b5263;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 460px;
+}
+.summary-close {
+  font-size: 18px;
+  color: #4b5263;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.summary-close:hover { background: #252528; color: #c9ccd6; }
+
+/* footer */
+.summary-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.summary-footer-spacer { flex: 1; }
+.summary-count {
+  font-size: 11px;
+  color: #3a3d4a;
+}
+:deep(.tb-summary-dialog .el-button) {
+  background: #252528 !important;
+  border-color: #2e2e32 !important;
+  color: #c9ccd6 !important;
+}
+:deep(.tb-summary-dialog .el-button:hover) {
+  background: #2e2e32 !important;
+  color: #e2e4e9 !important;
+}
+:deep(.tb-summary-dialog .el-button--primary) {
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important;
+  border-color: #6366f1 !important;
+  color: #fff !important;
+}
+:deep(.tb-summary-dialog .el-button--primary:hover) {
+  opacity: 0.9;
+}
+:deep(.tb-summary-dialog .el-button.is-disabled) {
+  background: #1e1e22 !important;
+  color: #3a3d4a !important;
+  border-color: #2e2e32 !important;
+  opacity: 0.7;
+}
 
 /* 禁止分页按钮出现 not-allowed */
 .pagination-container :deep(.el-pagination button:disabled),
@@ -583,3 +1023,6 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   cursor: default !important;
 }
 </style>
+
+<!-- AI 总结弹窗的全局样式已统一移到 App.vue -->
+
