@@ -84,7 +84,7 @@
           </div>
         </div>
 
-      </div> </div> <el-dialog v-model="bindDialogVisible" :title="bindType === 'phone' ? '绑定手机号' : '绑定邮箱'" width="400px">
+      </div> </div> <el-dialog v-model="bindDialogVisible" :title="bindType === 'phone' ? '绑定手机号' : '绑定邮箱'" width="400px" @opened="onProfileDialogOpen">
       <el-form label-width="80px">
         <el-form-item :label="bindType === 'phone' ? '手机号' : '邮箱'">
           <el-input v-model="bindValue" :placeholder="bindType === 'phone' ? '请输入新的手机号' : '请输入新的邮箱'" />
@@ -98,7 +98,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordDialogVisible" title="修改登录密码" width="420px" @closed="resetPasswordForm">
+    <el-dialog v-model="passwordDialogVisible" title="修改登录密码" width="420px" @opened="onProfileDialogOpen" @closed="resetPasswordForm">
       <el-form label-width="100px">
         <el-form-item label="旧密码">
           <el-input
@@ -140,10 +140,15 @@
   </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/utils/request'
+import { makeAllDialogsDraggable } from '@/utils/draggable'
+
+function onProfileDialogOpen() {
+  nextTick(() => makeAllDialogsDraggable())
+}
 
 
 

@@ -93,10 +93,36 @@ body, html {
   border-color: #2e2e32 !important;
 }
 
+/* ============ 所有 el-dialog 一律去掉浏览器/Element Plus 的白色光晕、聚焦边框 ============ */
+.el-dialog,
+.el-dialog:focus,
+.el-dialog:focus-visible,
+.el-dialog:active,
+.el-dialog *:focus,
+.el-dialog *:focus-visible {
+  outline: none !important;
+  outline-color: transparent !important;
+}
+/* 干掉 element-plus 默认的浅色 box-shadow / focus ring，并完全去掉边框 */
+.el-dialog,
+.el-dialog:focus,
+.el-dialog:focus-visible {
+  --el-dialog-box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55) !important;
+  --el-dialog-border-color: transparent !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55) !important;
+  border: none !important;
+}
+/* overlay 容器兜底 */
+.el-overlay,
+.el-overlay-dialog,
+.el-overlay:focus,
+.el-overlay-dialog:focus,
+.el-overlay-dialog *:focus { outline: none !important; }
+
 /* ─── AI 总结弹窗：通用全局样式（NotesView / AgentView 共用） ─── */
-.tb-summary-dialog .el-dialog {
+.tb-summary-dialog.el-dialog {
   background: #1a1a1c !important;
-  border: 0.5px solid #2e2e32 !important;
+  border: none !important;
   border-radius: 16px !important;
   overflow: hidden;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);

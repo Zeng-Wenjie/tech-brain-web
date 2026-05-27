@@ -15,6 +15,7 @@
                 <div class="card-header">
                   <span class="note-title">{{ note.title }}</span>
                   <div class="card-actions">
+                    <span class="note-id" title="笔记 ID">#{{ note.id }}</span>
                     <div
                       v-if="isManageMode"
                       class="circle-checkbox"
@@ -112,7 +113,7 @@
       :append-to-body="true"
       destroy-on-close
       class="tb-note-dialog"
-      @open="onAnyDialogOpen"
+      @opened="onAnyDialogOpen"
     >
       <el-form :model="newNote" label-position="top">
         <el-form-item label="笔记标题">
@@ -146,7 +147,7 @@
       :show-close="false"
       destroy-on-close
       class="tb-summary-dialog"
-      @open="onAnyDialogOpen"
+      @opened="onAnyDialogOpen"
     >
       <template #header>
         <div class="summary-header">
@@ -205,7 +206,7 @@ import { Close, Back, Loading, MagicStick, DocumentAdd, CopyDocument } from '@el
 import { nextTick } from 'vue'
 import request from '@/utils/request'
 import { marked } from 'marked'
-import { makeDraggable } from '@/utils/draggable'
+import { makeAllDialogsDraggable } from '@/utils/draggable'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 
@@ -250,12 +251,9 @@ const stripMarkdown = (text) => {
     .replace(/\n/g, ' ')
 }
 
-// ── 拖动支持 ───────────────────────────────────────────
+// ── 拖动支持（统一给所有打开的 el-dialog 绑定，工具内部有去重保护） ──
 function onAnyDialogOpen() {
-  nextTick(() => {
-    const el = document.querySelector('.tb-note-dialog .el-dialog')
-    if (el) makeDraggable(el)
-  })
+  nextTick(() => makeAllDialogsDraggable())
 }
 
 // ── 数据获取 ───────────────────────────────────────────
@@ -637,6 +635,16 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   max-width: 80%;
 }
 .card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.note-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #6b7280;
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.2px;
+}
 
 .edit-icon, .delete-icon {
   cursor: pointer;

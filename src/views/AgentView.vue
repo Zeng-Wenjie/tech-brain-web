@@ -61,6 +61,16 @@
         <span class="nav-badge" v-if="notesTotal > 0 && !sidebarCollapsed">{{ notesTotal }}</span>
       </div>
 
+      <div
+        class="nav-item"
+        :class="{ active: currentView === 'tool-log' }"
+        :title="sidebarCollapsed ? '工具调用日志' : ''"
+        @click="currentView = 'tool-log'"
+      >
+        <el-icon><Tickets /></el-icon>
+        <span v-show="!sidebarCollapsed">工具调用日志</span>
+      </div>
+
       <div class="nav-item disabled" :title="sidebarCollapsed ? '数据分析（即将上线）' : '即将上线'">
         <el-icon><TrendCharts /></el-icon>
         <span v-show="!sidebarCollapsed">数据分析</span>
@@ -229,6 +239,16 @@
         <NotesView ref="notesViewRef" @total-change="notesTotal = $event" />
       </div>
 
+      <!-- ─── 工具调用日志视图 ─── -->
+      <div v-else-if="currentView === 'tool-log'" class="view-tool-log">
+        <div class="notes-topbar">
+          <div class="notes-topbar-left">
+            <span class="notes-topbar-title">工具调用日志</span>
+          </div>
+        </div>
+        <ToolCallLogView />
+      </div>
+
     </main>
 
     <!-- ═══════════════ AI 总结弹窗 ═══════════════ -->
@@ -238,7 +258,7 @@
       :append-to-body="true"
       :show-close="false"
       class="tb-summary-dialog"
-      @open="onDialogOpen"
+      @opened="onDialogOpen"
       @close="onSummaryDialogClose"
     >
       <template #header>
@@ -299,14 +319,15 @@ import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import {
   EditPen, Notebook, TrendCharts, DataAnalysis, User, UserFilled,
   MoreFilled, SwitchButton, Promotion, Share, CopyDocument, Loading,
-  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close
+  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close, Tickets
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import request from '@/utils/request'
-import { makeDraggable } from '@/utils/draggable'
+import { makeAllDialogsDraggable } from '@/utils/draggable'
 import NotesView from './NotesView.vue'
+import ToolCallLogView from './ToolCallLogView.vue'
 import LoginModal from '@/components/LoginModal.vue'
 
 const router = useRouter()
@@ -539,12 +560,9 @@ function usePrompt(text) {
   handleSend()
 }
 
-// ─── 弹窗拖动 ──────────────────────────────────────────
+// ─── 弹窗拖动（统一对所有打开的 el-dialog 绑定，工具内部有去重保护） ───
 function onDialogOpen() {
-  nextTick(() => {
-    const el = document.querySelector('.tb-dialog .el-dialog')
-    if (el) makeDraggable(el)
-  })
+  nextTick(() => makeAllDialogsDraggable())
 }
 
 // ─── 用户相关 ──────────────────────────────────────────
@@ -1445,7 +1463,8 @@ onUnmounted(() => {
 }
 
 /* ── NOTES 视图 ─────────────────────────────────── */
-.view-notes {
+.view-notes,
+.view-tool-log {
   flex: 1;
   display: flex;
   flex-direction: column;
