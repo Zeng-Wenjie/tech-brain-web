@@ -325,7 +325,7 @@ const submitPassword = async () => {
       ElMessage.success('密码修改成功，请使用新密码重新登录')
       passwordDialogVisible.value = false
       localStorage.removeItem('token')
-      router.push('/login')
+      router.push('/')
     } else {
       ElMessage.error(res.message || '密码修改失败')
     }
@@ -482,7 +482,7 @@ const submitPassword = async () => {
   line-height: 1;
 }
 
-/* 💡 鼠标放上去时，文字条浮现 */
+/* 鼠标放上去时，文字条浮现 */
 .avatar-uploader:hover .avatar-hover-text {
   opacity: 1; 
 }

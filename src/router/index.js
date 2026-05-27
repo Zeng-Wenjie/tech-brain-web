@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AgentView from '../views/AgentView.vue'
-import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
 
 const router = createRouter({
@@ -9,33 +8,26 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: AgentView 
-    },
-    // 👇 加上这一段：注册登录路由
-    {
-      path: '/login',
-      name: 'login',
-      component: LoginView 
+      component: AgentView
     },
     {
       path: '/profile',
       name: 'profile',
-      component: ProfileView 
+      component: ProfileView,
+      meta: { requiresAuth: true }
     }
   ]
 })
 
-// 👇 现代版全局路由守卫（Vue Router 4+ 推荐写法）
-router.beforeEach((to, from) => {
+// 只保护 profile 页面，/ 首页无需登录也可访问
+router.beforeEach((to) => {
   const token = localStorage.getItem('token')
-  
-  if (to.path !== '/login' && !token) {
-    // 没登录且想去别的页面，直接 return 重定向的路径
-    return '/login' 
+  if (to.meta.requiresAuth && !token) {
+    // 触发全局登录弹窗事件，而不是跳转页面
+    window.dispatchEvent(new CustomEvent('tb:require-login'))
+    return false
   }
-  
-  // 验证通过，直接 return true 放行（不要再写 next() 了）
-  return true 
+  return true
 })
 
 export default router

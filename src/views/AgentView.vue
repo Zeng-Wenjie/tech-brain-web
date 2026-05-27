@@ -1,78 +1,238 @@
 <template>
-  <div class="workspace-layout">
+  <div class="tb-app">
 
-    <div class="agent-pane">
-      <div class="pane-header left-header">
-        <div class="title">Tech-Brain Agent</div>
-        <button class="new-conv-btn" @click="startNewConversation">+ 新会话</button>
-      </div>
-
-      <!-- 会话列表区域 -->
-      <div class="conversation-list" v-if="conversations.length > 0">
-        <div
-          v-for="conv in conversations"
-          :key="conv.id"
-          class="conv-item"
-          :class="{ active: conv.id === currentConversationId }"
-          @click="loadConversation(conv.id)"
-          :title="conv.title || '新会话'"
+    <!-- ═══════════════ 左侧导航栏 ═══════════════ -->
+    <aside class="tb-sidebar" :class="{ collapsed: sidebarCollapsed }">
+      <!-- Logo + 折叠按钮 -->
+      <div class="sidebar-logo">
+        <div class="logo-icon"><span>TB</span></div>
+        <span class="logo-text" v-show="!sidebarCollapsed">Tech-Brain</span>
+        <el-icon
+          class="sidebar-toggle"
+          :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+          @click="toggleSidebar"
         >
-          <span class="conv-icon">💬</span>
-          <span class="conv-title">{{ conv.title || '新会话' }}</span>
-          <span class="conv-delete-btn" @click.stop="deleteConversation(conv.id)" title="删除会话">×</span>
-        </div>
+          <Fold v-if="!sidebarCollapsed" />
+          <Expand v-else />
+        </el-icon>
       </div>
 
-      <div class="chat-body" ref="chatBodyRef">
-        <div v-for="(msg, index) in messages" :key="index" class="msg-row">
-          <div class="avatar" v-if="msg.role === 'ai'">✨</div>
-          <div class="msg-content markdown-body" :class="msg.role">
-            <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+      <!-- 新对话 -->
+      <div class="new-chat-btn" :title="sidebarCollapsed ? '新对话' : ''" @click="startNewConversation">
+        <el-icon><EditPen /></el-icon>
+        <span v-show="!sidebarCollapsed">新对话</span>
+      </div>
 
-            <div v-else-if="index === 0">
-              <div v-html="parseMarkdown(msg.content)"></div>
-            </div>
+      <!-- 对话历史 -->
+      <template v-if="!sidebarCollapsed">
+        <div class="sidebar-section-label">最近对话</div>
+        <div class="conv-list" v-if="conversations.length">
+          <div
+            v-for="conv in conversations"
+            :key="conv.id"
+            class="conv-item"
+            :class="{ active: conv.id === currentConversationId }"
+            @click="loadConversation(conv.id)"
+            :title="conv.title || '新会话'"
+          >
+            <span class="conv-item-title">{{ conv.title || '新会话' }}</span>
+            <span class="conv-item-del" @click.stop="deleteConversation(conv.id)">✕</span>
+          </div>
+        </div>
+        <div v-else class="conv-empty">暂无对话记录</div>
+      </template>
+      <!-- 折叠时占位，把功能区推到下方 -->
+      <div v-else class="conv-list-spacer"></div>
 
-            <div v-else class="ai-msg-box">
-              <div v-html="parseMarkdown(msg.content)"></div>
-              <div class="ai-msg-footer">
-                <span class="save-action-btn" @click="handleSaveAiMsg(msg.content)">保存</span>
+      <!-- 功能入口 -->
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label" v-show="!sidebarCollapsed">功能</div>
+
+      <div
+        class="nav-item"
+        :class="{ active: currentView === 'notes' }"
+        :title="sidebarCollapsed ? '知识笔记' : ''"
+        @click="currentView = 'notes'"
+      >
+        <el-icon><Notebook /></el-icon>
+        <span v-show="!sidebarCollapsed">知识笔记</span>
+        <span class="nav-badge" v-if="notesTotal > 0 && !sidebarCollapsed">{{ notesTotal }}</span>
+      </div>
+
+      <div class="nav-item disabled" :title="sidebarCollapsed ? '数据分析（即将上线）' : '即将上线'">
+        <el-icon><TrendCharts /></el-icon>
+        <span v-show="!sidebarCollapsed">数据分析</span>
+        <span class="nav-soon" v-show="!sidebarCollapsed">即将上线</span>
+      </div>
+
+      <div class="nav-item disabled" :title="sidebarCollapsed ? '学习统计（即将上线）' : '即将上线'">
+        <el-icon><DataAnalysis /></el-icon>
+        <span v-show="!sidebarCollapsed">学习统计</span>
+        <span class="nav-soon" v-show="!sidebarCollapsed">即将上线</span>
+      </div>
+
+      <!-- 底部用户区 -->
+      <div class="sidebar-bottom">
+        <template v-if="isLoggedIn">
+          <el-popover placement="top-start" :width="200" trigger="click" popper-class="tb-profile-popper">
+            <template #reference>
+              <div class="user-area" :title="sidebarCollapsed ? (userInfo.name || userInfo.username) : ''">
+                <el-avatar :size="28" :src="userInfo.avatar" class="user-avatar">
+                  {{ (userInfo.name || userInfo.username || 'U').charAt(0).toUpperCase() }}
+                </el-avatar>
+                <div class="user-info" v-show="!sidebarCollapsed">
+                  <div class="user-name">{{ userInfo.name || userInfo.username }}</div>
+                  <div class="user-sub">个人中心 / 设置</div>
+                </div>
+                <el-icon class="user-more" v-show="!sidebarCollapsed"><MoreFilled /></el-icon>
+              </div>
+            </template>
+            <div class="profile-pop">
+              <div class="profile-pop-name">{{ userInfo.name || userInfo.username }}</div>
+              <div class="profile-pop-item" @click="goToProfile">
+                <el-icon><UserFilled /></el-icon> 个人中心
+              </div>
+              <div class="profile-pop-item logout" @click="handleLogout">
+                <el-icon><SwitchButton /></el-icon> 退出登录
               </div>
             </div>
+          </el-popover>
+        </template>
+        <template v-else>
+          <div class="user-area guest" :title="sidebarCollapsed ? '点击登录' : ''" @click="loginModalVisible = true">
+            <div class="user-avatar-guest"><el-icon><User /></el-icon></div>
+            <div class="user-info" v-show="!sidebarCollapsed">
+              <div class="user-name">未登录</div>
+              <div class="user-sub">点击登录 / 注册</div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </aside>
+
+    <!-- ═══════════════ 主内容区 ═══════════════ -->
+    <main class="tb-main">
+
+      <!-- ─── HOME 视图 ─── -->
+      <div v-if="currentView === 'home'" class="view-home">
+        <div class="home-center">
+          <div class="home-greeting">你好，欢迎来到 Tech-Brain</div>
+          <div class="home-sub">你的专属 AI 技术知识助理，开始你的第一个对话吧</div>
+          <div class="home-prompts">
+            <div
+              v-for="p in quickPrompts"
+              :key="p.text"
+              class="prompt-card"
+              @click="usePrompt(p.text)"
+            >
+              <div class="prompt-title">{{ p.text }}</div>
+              <div class="prompt-tag">{{ p.tag }}</div>
+            </div>
+          </div>
+          <div class="home-input-wrap">
+            <textarea
+              ref="homeTextareaRef"
+              v-model="userInput"
+              class="home-textarea"
+              placeholder="有什么想问的，直接说..."
+              rows="1"
+              @input="adjustHomeHeight"
+              @keydown.enter.exact.prevent="handleSend"
+            ></textarea>
+            <button class="home-send-btn" @click="handleSend">
+              <el-icon><Promotion /></el-icon>
+            </button>
           </div>
         </div>
       </div>
 
-      <div class="input-dock">
-        <div class="gemini-input-wrapper">
-        <textarea
-        ref="textareaRef"
-        v-model="userInput"
-        placeholder="输入给 Tech-Brain 的指令..."
-        class="custom-textarea"
-        rows="1"
-        @input="adjustHeight"
-        @keydown.enter.prevent="handleSend"
-        ></textarea>
-
-          <div class="input-actions-right">
-            <button class="send-btn" @click="handleSend">➤</button>
+      <!-- ─── CHAT 视图 ─── -->
+      <div v-else-if="currentView === 'chat'" class="view-chat">
+        <div class="chat-header">
+          <span class="chat-title">{{ currentChatTitle }}</span>
+          <div class="chat-header-actions">
+            <el-icon class="hdr-icon"><Share /></el-icon>
+            <el-icon class="hdr-icon"><MoreFilled /></el-icon>
           </div>
         </div>
-        <div class="footer-text">Tech-Brain Agent · RAG 增强模式</div>
-      </div>
-    </div>
 
-    <!-- AI 总结弹窗（聊天触发） -->
+        <div class="chat-body" ref="chatBodyRef">
+          <div v-for="(msg, idx) in messages" :key="idx" class="msg-row" :class="msg.role">
+            <template v-if="msg.role === 'ai'">
+              <div class="ai-avatar">TB</div>
+              <div class="ai-bubble">
+                <div class="ai-content markdown-body" v-html="parseMarkdown(msg.content)"></div>
+                <div class="ai-actions" v-if="idx > 0">
+                  <button class="ai-action-btn" @click="handleSaveAiMsg(msg.content)">
+                    <el-icon><Notebook /></el-icon> 保存笔记
+                  </button>
+                  <button class="ai-action-btn" @click="copyText(msg.content)">
+                    <el-icon><CopyDocument /></el-icon> 复制
+                  </button>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="user-bubble">{{ msg.content }}</div>
+            </template>
+          </div>
+        </div>
+
+        <div class="chat-input-dock">
+          <div class="chat-input-wrap">
+            <textarea
+              ref="chatTextareaRef"
+              v-model="userInput"
+              class="chat-textarea"
+              placeholder="继续向 Tech-Brain 提问..."
+              rows="1"
+              @input="adjustChatHeight"
+              @keydown.enter.exact.prevent="handleSend"
+            ></textarea>
+            <button class="chat-send-btn" :disabled="isLoading" @click="handleSend">
+              <el-icon><Promotion /></el-icon>
+            </button>
+          </div>
+          <div class="chat-footer-tip">Tech-Brain · RAG 增强模式</div>
+        </div>
+      </div>
+
+      <!-- ─── NOTES 视图 ─── -->
+      <div v-else-if="currentView === 'notes'" class="view-notes">
+        <div class="notes-topbar">
+          <div class="notes-topbar-left">
+            <span class="notes-topbar-title">知识笔记</span>
+            <span class="notes-topbar-count" v-if="notesTotal > 0">{{ notesTotal }}</span>
+          </div>
+          <div class="notes-topbar-right">
+            <template v-if="notesViewRef && !notesViewRef.isManageMode">
+              <span class="topbar-btn primary" @click="triggerAddNote">+ 新建</span>
+              <span class="topbar-btn" @click="notesViewRef.toggleManageMode()">编辑</span>
+            </template>
+            <template v-else-if="notesViewRef && notesViewRef.isManageMode">
+              <span class="topbar-btn" @click="notesViewRef.toggleManageMode()">取消</span>
+              <span class="topbar-btn danger" @click="notesViewRef.batchDeleteNotes()">
+                删除 ({{ notesViewRef.selectedIds.length }})
+              </span>
+            </template>
+          </div>
+        </div>
+        <NotesView ref="notesViewRef" @total-change="notesTotal = $event" />
+      </div>
+
+    </main>
+
+    <!-- ═══════════════ AI 总结弹窗 ═══════════════ -->
     <el-dialog
       v-model="summaryDialogVisible"
-      title="AI总结"
-      width="640px"
+      title="AI 总结"
+      width="600px"
       :append-to-body="true"
-      class="custom-dialog"
+      class="tb-dialog"
+      @open="onDialogOpen"
       @close="onSummaryDialogClose"
     >
-      <div v-if="summaryLoading" class="summary-loading">
+      <div v-if="summaryLoading" class="dialog-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>AI 正在总结中...</span>
       </div>
@@ -81,368 +241,215 @@
         <div class="summary-content markdown-body" v-html="parseMarkdown(summaryContent)"></div>
       </template>
       <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="onSummaryDialogClose">关闭</el-button>
-          <el-button type="primary" :disabled="summaryLoading || !summaryContent" @click="copySummaryFromChat">复制总结</el-button>
-        </span>
+        <el-button @click="onSummaryDialogClose">关闭</el-button>
+        <el-button type="primary" :disabled="summaryLoading || !summaryContent" @click="copySummaryFromChat">
+          复制总结
+        </el-button>
       </template>
     </el-dialog>
 
-    <div class="extension-pane">
+    <!-- ═══════════════ 登录弹窗 ═══════════════ -->
+    <LoginModal v-model:visible="loginModalVisible" @success="onLoginSuccess" />
 
-      <div class="pane-header right-header">
-       <div class="header-actions" style="display: flex; align-items: center; gap: 15px;">
-          <span class="icon-btn" title="菜单" @click="isDrawerVisible = !isDrawerVisible">≡</span>
-
-          <template v-if="notesViewRef && !notesViewRef.isManageMode">
-            <span class="action-text-btn" @click="triggerAddNote">➕ 新建</span>
-            <span class="action-text-btn" @click="notesViewRef.toggleManageMode()">编辑</span>
-          </template>
-
-          <template v-else-if="notesViewRef && notesViewRef.isManageMode">
-            <span class="action-text-btn" @click="notesViewRef.toggleManageMode()">取消</span>
-            <span class="action-text-btn danger" @click="notesViewRef.batchDeleteNotes()">删除 ({{ notesViewRef.selectedIds.length }})</span>
-          </template>
-        </div>
-
-       <div class="right-configs">
-  <el-button link class="theme-toggle-btn" @click="toggleTheme">
-    <el-icon v-if="isDark" :size="20"><Sunny /></el-icon>
-    <el-icon v-else :size="20"><Moon /></el-icon>
-  </el-button>
-
-  <el-popover placement="bottom-end" :width="220" trigger="click" popper-class="profile-popper">
-    <template #reference>
-  <div style="cursor: pointer; display: flex; align-items: center;">
-    <el-avatar :size="34" :src="userInfo.avatar" style="background-color: var(--tb-color-primary);">
-      {{ userInfo.name?.charAt(0) || userInfo.username?.charAt(0) || 'U' }}
-    </el-avatar>
-  </div>
-</template>
-
-    <ProfileCard
-      :userInfo="userInfo"
-      @logout="handleLogout"
-      @open-settings="goToProfile"
-    />
-  </el-popover>
-</div>
-      </div>
-
-      <div class="extension-content" style="position: relative; overflow: hidden; display: flex; flex-direction: column;">
-
-        <el-drawer
-          v-model="isDrawerVisible"
-          direction="ltr"
-          :with-header="false"
-          size="240px"
-          :append-to-body="false"
-          class="notes-drawer"
-        >
-          <div class="drawer-container">
-            <div class="drawer-section" style="margin-top: 20px;">
-              <div class="menu-item active"><span class="icon">📝</span> 全部笔记</div>
-            </div>
-
-            <div class="drawer-footer">
-              <div class="menu-item"><span class="icon">⚙</span> 设置和帮助</div>
-            </div>
-          </div>
-        </el-drawer>
-
-        <NotesView ref="notesViewRef" />
-
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
-import { Sunny, Moon, Loading } from '@element-plus/icons-vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
-import request from '@/utils/request'
-import { marked } from 'marked'
-
-import NotesView from './NotesView.vue'
-
+import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
+import {
+  EditPen, Notebook, TrendCharts, DataAnalysis, User, UserFilled,
+  MoreFilled, SwitchButton, Promotion, Share, CopyDocument, Loading,
+  Expand, Fold
+} from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import ProfileCard from '@/components/ProfileCard.vue'
+import { marked } from 'marked'
+import request from '@/utils/request'
+import { makeDraggable } from '@/utils/draggable'
+import NotesView from './NotesView.vue'
+import LoginModal from '@/components/LoginModal.vue'
 
 const router = useRouter()
 
-const userInfo = ref({
-  name: '',
-  username: '',
-  avatar: '',
-  level: 1
-})
-
-// ================= 会话管理状态 =================
-const currentConversationId = ref(null)
-const conversations = ref([])
-const conversationLoading = ref(false)
-
-const WELCOME_MSG = { role: 'ai', content: '###  欢迎回来，哥哥！\n\n我是你的专属小助理 **02**' }
-
-// 获取会话列表
-const fetchConversations = async () => {
-  try {
-    const res = await request.get('/conversation/list')
-    if (res.code === 200 && res.data) {
-      conversations.value = res.data
-    }
-  } catch (error) {
-    console.warn('获取会话列表失败，已忽略', error)
-  }
+// ─── 视图状态 ───────────────────────────────────────────
+const currentView = ref('home') // 'home' | 'chat' | 'notes'
+const sidebarCollapsed = ref(localStorage.getItem('tb:sidebar-collapsed') === '1')
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('tb:sidebar-collapsed', sidebarCollapsed.value ? '1' : '0')
 }
 
-// 加载指定会话的历史消息
-const loadConversation = async (conversationId) => {
-  if (conversationId === currentConversationId.value) return
-  currentConversationId.value = conversationId
-  conversationLoading.value = true
+// ─── 用户信息 ───────────────────────────────────────────
+const userInfo = ref({ name: '', username: '', avatar: '', level: 1 })
+const isLoggedIn = computed(() => !!localStorage.getItem('token'))
+const loginModalVisible = ref(false)
+
+// ─── 笔记总数（由 NotesView emit） ───────────────────────
+const notesTotal = ref(0)
+const notesViewRef = ref(null)
+
+// ─── 对话状态 ───────────────────────────────────────────
+const currentConversationId = ref(null)
+const conversations = ref([])
+const messages = ref([])
+const userInput = ref('')
+const isLoading = ref(false)
+const chatBodyRef = ref(null)
+const chatTextareaRef = ref(null)
+const homeTextareaRef = ref(null)
+
+const WELCOME_MSG = { role: 'ai', content: '### 欢迎回来！\n\n我是你的专属助理 **02**，有什么可以帮你的？' }
+
+const currentChatTitle = computed(() => {
+  if (!currentConversationId.value) return '新对话'
+  const c = conversations.value.find(c => c.id === currentConversationId.value)
+  return c?.title || '新对话'
+})
+
+// ─── 快捷 Prompt ───────────────────────────────────────
+const quickPrompts = [
+  { text: '讲解 Redis 缓存击穿与雪崩的解决方案', tag: '技术知识' },
+  { text: '帮我总结 Spring Boot 自动装配原理', tag: '知识总结' },
+  { text: '出 5 道 JVM 面试题并给出答案', tag: '面试辅助' },
+  { text: '解释 MySQL 联合索引最左前缀原则', tag: '数据库' }
+]
+
+function usePrompt(text) {
+  userInput.value = text
+  handleSend()
+}
+
+// ─── 弹窗拖动 ──────────────────────────────────────────
+function onDialogOpen() {
+  nextTick(() => {
+    const el = document.querySelector('.tb-dialog .el-dialog')
+    if (el) makeDraggable(el)
+  })
+}
+
+// ─── 用户相关 ──────────────────────────────────────────
+async function loadUserInfo() {
+  if (!localStorage.getItem('token')) return
   try {
-    const res = await request.get(`/conversation/${conversationId}/messages`)
+    const res = await request.get('/info')
+    if (res.code === 200 && res.data) userInfo.value = res.data
+  } catch { /* ignore */ }
+}
+
+function onLoginSuccess(data) {
+  userInfo.value = data
+  loadUserInfo()
+  fetchConversations()
+}
+
+function handleLogout() {
+  localStorage.removeItem('token')
+  userInfo.value = { name: '', username: '', avatar: '', level: 1 }
+  currentConversationId.value = null
+  conversations.value = []
+  messages.value = []
+  currentView.value = 'home'
+  ElMessage.success('已退出登录')
+}
+
+function goToProfile() {
+  router.push('/profile')
+}
+
+// ─── 全局登录事件监听 ────────────────────────────────────
+function onRequireLogin() {
+  loginModalVisible.value = true
+}
+
+// ─── 对话管理 ──────────────────────────────────────────
+async function fetchConversations() {
+  if (!localStorage.getItem('token')) return
+  try {
+    const res = await request.get('/conversation/list')
+    if (res.code === 200 && res.data) conversations.value = res.data
+  } catch { /* ignore */ }
+}
+
+async function loadConversation(id) {
+  if (id === currentConversationId.value) {
+    currentView.value = 'chat'
+    return
+  }
+  currentConversationId.value = id
+  currentView.value = 'chat'
+  try {
+    const res = await request.get(`/conversation/${id}/messages`)
     if (res.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
-      const history = res.data.map(m => ({
-        role: m.role === 'assistant' ? 'ai' : 'user',
-        content: m.content
-      }))
-      messages.value = [{ ...WELCOME_MSG }, ...history]
+      messages.value = [
+        { ...WELCOME_MSG },
+        ...res.data.map(m => ({ role: m.role === 'assistant' ? 'ai' : 'user', content: m.content }))
+      ]
     } else {
       messages.value = [{ ...WELCOME_MSG }]
     }
-  } catch (error) {
-    console.warn('加载历史消息失败，已忽略', error)
+  } catch {
     messages.value = [{ ...WELCOME_MSG }]
-  } finally {
-    conversationLoading.value = false
   }
   await scrollToBottom()
 }
 
-// 新会话：清空 id、输入框，重置欢迎语
-const startNewConversation = () => {
+function startNewConversation() {
   currentConversationId.value = null
   messages.value = [{ ...WELCOME_MSG }]
   userInput.value = ''
+  currentView.value = 'chat'
 }
 
-// 删除会话
-const deleteConversation = async (conversationId) => {
+async function deleteConversation(id) {
   try {
     await ElMessageBox.confirm('确定删除该会话吗？', '删除确认', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning'
     })
-  } catch {
-    return
-  }
+  } catch { return }
   try {
-    await request.delete(`/conversation/${conversationId}`)
-    if (conversationId === currentConversationId.value) {
+    await request.delete(`/conversation/${id}`)
+    if (id === currentConversationId.value) {
       currentConversationId.value = null
       messages.value = [{ ...WELCOME_MSG }]
-      userInput.value = ''
+      currentView.value = 'home'
     }
     await fetchConversations()
     ElMessage.success('会话已删除')
-  } catch (error) {
-    ElMessage.error('删除失败，请重试')
-  }
-}
-
-onMounted(async () => {
-  // 加载用户信息
-  try {
-    const res = await request.get('/info')
-    if (res.code === 200 && res.data) {
-      userInfo.value = res.data
-    }
-  } catch (error) {
-    console.error('获取用户信息失败', error)
-  }
-
-  // 加载主题
-  const savedTheme = localStorage.getItem('tech-brain-theme')
-  if (savedTheme) {
-    isDark.value = savedTheme === 'dark'
-  } else {
-    isDark.value = !window.matchMedia('(prefers-color-scheme: light)').matches
-  }
-  updateBodyClass()
-
-  // 加载会话列表（失败不影响页面）
-  await fetchConversations()
-})
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('tech-brain-theme')
-  router.push('/login')
-}
-
-const goToProfile = () => {
-  router.push('/profile')
-}
-
-const textareaRef = ref(null)
-
-const handleSaveAiMsg = (content) => {
-  if (notesViewRef.value) {
-    notesViewRef.value.openAddNote(content)
-  }
-}
-
-// ================= 组件引用与跨组件调用 =================
-const notesViewRef = ref(null)
-
-const triggerAddNote = () => {
-  if (notesViewRef.value) {
-    notesViewRef.value.openAddNote()
-    isDrawerVisible.value = false
-  }
-}
-
-const parseMarkdown = (text) => {
-  if (!text) return ''
-  return marked(text)
-}
-
-const isDrawerVisible = ref(false)
-
-// ================= 主题切换逻辑 =================
-const isDark = ref(true)
-
-const toggleTheme = () => {
-  isDark.value = !isDark.value
-  localStorage.setItem('tech-brain-theme', isDark.value ? 'dark' : 'light')
-  updateBodyClass()
-}
-
-const updateBodyClass = () => {
-  if (isDark.value) {
-    document.body.classList.remove('light')
-  } else {
-    document.body.classList.add('light')
-  }
-}
-
-// ================= AI 总结弹窗状态 =================
-const summaryDialogVisible = ref(false)
-const summaryLoading = ref(false)
-const summarySourceName = ref('')
-const summaryContent = ref('')
-const summaryArticleId = ref(null)
-const summaryType = ref('')
-const pendingSummaryFromChat = ref(false)
-const summaryDialogManuallyClosed = ref(false)
-
-const isSummaryIntent = (msg) => {
-  const intentWords = ['总结', 'AI总结', '整理成要点', '提炼要点', '面试话术', '概括', '摘要']
-  const targetWords = ['第', '篇', '文章', '笔记', 'note', 'article']
-  return intentWords.some(k => msg.includes(k)) && targetWords.some(k => msg.includes(k))
-}
-
-const handleSummaryResult = (raw) => {
-  if (!raw) return
-  let data
-  try {
-    data = JSON.parse(raw)
   } catch {
-    return
-  }
-  if (data.type !== 'article_summary') return
-
-  pendingSummaryFromChat.value = false
-
-  if (data.success !== true) {
-    summaryLoading.value = false
-    summaryDialogVisible.value = false
-    ElMessage.warning(data.chatMessage || '总结失败')
-    return
-  }
-
-  if (!data.summary) {
-    summaryLoading.value = false
-    summaryDialogVisible.value = false
-    ElMessage.warning('总结内容为空')
-    return
-  }
-
-  summarySourceName.value = data.title || ''
-  summaryContent.value = data.summary
-  summaryArticleId.value = data.articleId ?? null
-  summaryType.value = data.summaryType || 'normal'
-  summaryLoading.value = false
-
-  if (!summaryDialogManuallyClosed.value) {
-    summaryDialogVisible.value = true
-  } else {
-    ElMessage.success('总结完成，可重新打开查看')
+    ElMessage.error('删除失败')
   }
 }
 
-const onSummaryDialogClose = () => {
-  if (summaryLoading.value) {
-    summaryDialogManuallyClosed.value = true
-  }
-  summaryDialogVisible.value = false
-}
-
-const clearSummaryState = () => {
-  summarySourceName.value = ''
-  summaryContent.value = ''
-  summaryArticleId.value = null
-  summaryType.value = ''
-  summaryLoading.value = false
-  pendingSummaryFromChat.value = false
-  summaryDialogManuallyClosed.value = false
-}
-
-const copySummaryFromChat = async () => {
-  if (!summaryContent.value) return
-  try {
-    await navigator.clipboard.writeText(summaryContent.value)
-    ElMessage.success('复制成功')
-  } catch {
-    ElMessage.error('复制失败，请手动复制')
-  }
-}
-
-// ================= 核心：Agent 对话交互逻辑 =================
-const userInput = ref('')
-const chatBodyRef = ref(null)
-const isLoading = ref(false)
-
-const messages = ref([{ ...WELCOME_MSG }])
-
-const handleSend = async () => {
+// ─── 发送消息 ──────────────────────────────────────────
+async function handleSend() {
   const text = userInput.value.trim()
   if (!text || isLoading.value) return
 
+  if (!localStorage.getItem('token')) {
+    loginModalVisible.value = true
+    return
+  }
+
+  // 切换到 chat 视图
+  if (currentView.value !== 'chat') {
+    currentView.value = 'chat'
+    if (!messages.value.length) messages.value = [{ ...WELCOME_MSG }]
+    await nextTick()
+  }
+
   messages.value.push({ role: 'user', content: text })
   userInput.value = ''
+  resetTextareaHeight()
 
-  nextTick(() => {
-    if (textareaRef.value) {
-      textareaRef.value.style.height = 'auto'
-    }
-  })
-
-  await scrollToBottom()
-
-  // 总结意图判断：先打开 loading 弹窗
+  // 总结意图检测
   if (isSummaryIntent(text)) {
     pendingSummaryFromChat.value = true
     summaryDialogManuallyClosed.value = false
     summaryLoading.value = true
     summaryContent.value = ''
     summarySourceName.value = ''
-    summaryType.value = ''
-    summaryArticleId.value = null
     summaryDialogVisible.value = true
   }
 
@@ -458,20 +465,13 @@ const handleSend = async () => {
         'Content-Type': 'application/json',
         'token': localStorage.getItem('token') || ''
       },
-      body: JSON.stringify({
-        conversationId: currentConversationId.value,
-        msg: text
-      })
+      body: JSON.stringify({ conversationId: currentConversationId.value, msg: text })
     })
 
     if (!response.ok || !response.body) {
       aiMsg.content = `请求失败：HTTP ${response.status}`
       isLoading.value = false
-      if (pendingSummaryFromChat.value) {
-        pendingSummaryFromChat.value = false
-        summaryLoading.value = false
-        summaryDialogVisible.value = false
-      }
+      clearPendingSummary()
       await scrollToBottom()
       return
     }
@@ -483,11 +483,9 @@ const handleSend = async () => {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
       buffer = lines.pop()
-
       let currentEvent = ''
       for (const line of lines) {
         if (line.startsWith('event:')) {
@@ -495,11 +493,8 @@ const handleSend = async () => {
         } else if (line.startsWith('data:')) {
           const raw = line.slice(5).trim()
           let parsed
-          try {
-            parsed = JSON.parse(raw)
-          } catch {
-            parsed = null
-          }
+          try { parsed = JSON.parse(raw) } catch { parsed = null }
+
           if (currentEvent === 'message') {
             aiMsg.content += parsed?.content ?? raw
             await scrollToBottom()
@@ -507,21 +502,16 @@ const handleSend = async () => {
             currentConversationId.value = parsed?.conversationId ?? raw
             await fetchConversations()
             isLoading.value = false
-            // done 兜底：如果总结意图还在 pending，说明后端未返回 summary_result
             if (pendingSummaryFromChat.value) {
               pendingSummaryFromChat.value = false
               summaryLoading.value = false
               summaryDialogVisible.value = false
-              ElMessage.warning('未收到总结结果，请稍后重试')
+              ElMessage.warning('未收到总结结果')
             }
           } else if (currentEvent === 'error') {
             aiMsg.content = `错误：${parsed?.message ?? raw}`
             isLoading.value = false
-            if (pendingSummaryFromChat.value) {
-              pendingSummaryFromChat.value = false
-              summaryLoading.value = false
-              summaryDialogVisible.value = false
-            }
+            clearPendingSummary()
           } else if (currentEvent === 'summary_result') {
             handleSummaryResult(raw)
           }
@@ -530,451 +520,736 @@ const handleSend = async () => {
       }
     }
   } catch (error) {
-    aiMsg.content = `网络请求失败，请检查后端服务是否启动。错误信息: ${error.message}`
-    if (pendingSummaryFromChat.value) {
-      pendingSummaryFromChat.value = false
-      summaryLoading.value = false
-      summaryDialogVisible.value = false
-    }
+    aiMsg.content = `网络请求失败：${error.message}`
+    clearPendingSummary()
   } finally {
     isLoading.value = false
     await scrollToBottom()
   }
 }
 
-const adjustHeight = () => {
+// ─── 辅助函数 ──────────────────────────────────────────
+function parseMarkdown(text) {
+  if (!text) return ''
+  return marked(text)
+}
+
+async function scrollToBottom() {
+  await nextTick()
+  if (chatBodyRef.value) chatBodyRef.value.scrollTop = chatBodyRef.value.scrollHeight
+}
+
+function adjustChatHeight() {
   nextTick(() => {
-    const textarea = textareaRef.value
-    if (!textarea) return
-    textarea.style.height = 'auto'
-    textarea.style.height = textarea.scrollHeight + 'px'
+    const t = chatTextareaRef.value
+    if (!t) return
+    t.style.height = 'auto'
+    t.style.height = Math.min(t.scrollHeight, 160) + 'px'
   })
 }
 
-const scrollToBottom = async () => {
-  await nextTick()
-  if (chatBodyRef.value) {
-    chatBodyRef.value.scrollTop = chatBodyRef.value.scrollHeight
+function adjustHomeHeight() {
+  nextTick(() => {
+    const t = homeTextareaRef.value
+    if (!t) return
+    t.style.height = 'auto'
+    t.style.height = Math.min(t.scrollHeight, 160) + 'px'
+  })
+}
+
+function resetTextareaHeight() {
+  nextTick(() => {
+    const t = chatTextareaRef.value || homeTextareaRef.value
+    if (t) t.style.height = 'auto'
+  })
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败')
   }
 }
+
+function handleSaveAiMsg(content) {
+  currentView.value = 'notes'
+  nextTick(() => notesViewRef.value?.openAddNote(content))
+}
+
+function triggerAddNote() {
+  currentView.value = 'notes'
+  nextTick(() => notesViewRef.value?.openAddNote())
+}
+
+// ─── AI 总结 ──────────────────────────────────────────
+const summaryDialogVisible = ref(false)
+const summaryLoading = ref(false)
+const summarySourceName = ref('')
+const summaryContent = ref('')
+const pendingSummaryFromChat = ref(false)
+const summaryDialogManuallyClosed = ref(false)
+
+const isSummaryIntent = (msg) => {
+  const intentWords = ['总结', 'AI总结', '整理成要点', '提炼要点', '面试话术', '概括', '摘要']
+  const targetWords = ['第', '篇', '文章', '笔记', 'note', 'article']
+  return intentWords.some(k => msg.includes(k)) && targetWords.some(k => msg.includes(k))
+}
+
+function handleSummaryResult(raw) {
+  let data
+  try { data = JSON.parse(raw) } catch { return }
+  if (data.type !== 'article_summary') return
+  pendingSummaryFromChat.value = false
+  if (!data.success) {
+    summaryLoading.value = false
+    summaryDialogVisible.value = false
+    ElMessage.warning(data.chatMessage || '总结失败')
+    return
+  }
+  summarySourceName.value = data.title || ''
+  summaryContent.value = data.summary || ''
+  summaryLoading.value = false
+  if (!summaryDialogManuallyClosed.value) summaryDialogVisible.value = true
+}
+
+function onSummaryDialogClose() {
+  if (summaryLoading.value) summaryDialogManuallyClosed.value = true
+  summaryDialogVisible.value = false
+}
+
+function clearPendingSummary() {
+  if (pendingSummaryFromChat.value) {
+    pendingSummaryFromChat.value = false
+    summaryLoading.value = false
+    summaryDialogVisible.value = false
+  }
+}
+
+async function copySummaryFromChat() {
+  try {
+    await navigator.clipboard.writeText(summaryContent.value)
+    ElMessage.success('复制成功')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+// ─── 主题（暗色，不再切换） ─────────────────────────────
+onMounted(async () => {
+  document.body.classList.remove('light')
+  await loadUserInfo()
+  await fetchConversations()
+  window.addEventListener('tb:require-login', onRequireLogin)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('tb:require-login', onRequireLogin)
+})
 </script>
 
 <style scoped>
-/* ================= 应用变量进行样式重构 ================= */
-
-.workspace-layout {
+/* ── 根布局 ─────────────────────────────────────── */
+.tb-app {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background-color: var(--tb-color-bg-page);
-  color: var(--tb-color-text-primary);
   overflow: hidden;
-  transition: background-color 0.3s ease;
+  background: #111113;
+  color: #e2e4e9;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
-/* ================= 左侧 Agent 区 ================= */
-.agent-pane {
-  flex: 3;
-  background-color: var(--tb-color-bg-panel);
-  border-right: 1px solid var(--tb-color-border);
+/* ── 左侧导航栏 ─────────────────────────────────── */
+.tb-sidebar {
+  width: 224px;
+  flex-shrink: 0;
+  background: #171717;
+  border-right: 0.5px solid #252525;
   display: flex;
   flex-direction: column;
-  position: relative;
-  transition: background-color 0.3s ease;
+  overflow: hidden;
+  transition: width 0.22s ease;
+}
+.tb-sidebar.collapsed {
+  width: 60px;
 }
 
-.pane-header {
-  height: 60px;
+/* 折叠按钮 */
+.sidebar-toggle {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-}
-
-.left-header {
-  border-bottom: 1px solid var(--tb-color-border);
-  font-weight: bold;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-
-.new-conv-btn {
-  background: transparent;
-  border: 1px solid var(--tb-color-border);
-  color: var(--tb-color-text-secondary);
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 14px;
+  justify-content: center;
+  border-radius: 6px;
+  color: #6b7280;
+  font-size: 16px;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
-.new-conv-btn:hover {
-  color: var(--tb-color-primary);
-  border-color: var(--tb-color-primary);
+.sidebar-toggle:hover { background: #252525; color: #e2e4e9; }
+.tb-sidebar.collapsed .sidebar-toggle { margin-left: 0; }
+
+/* 折叠态：图标居中、内边距收紧 */
+.tb-sidebar.collapsed .sidebar-logo { justify-content: center; padding: 0 8px; gap: 0; }
+.tb-sidebar.collapsed .new-chat-btn { margin: 0 8px 6px; padding: 0; }
+.tb-sidebar.collapsed .nav-item { justify-content: center; padding: 8px 0; margin: 1px 8px; }
+.tb-sidebar.collapsed .user-area { justify-content: center; padding: 7px 0; }
+.tb-sidebar.collapsed .sidebar-bottom { padding: 8px; }
+.tb-sidebar.collapsed .sidebar-divider { margin: 8px; }
+.conv-list-spacer { flex: 1; }
+
+.sidebar-logo {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  flex-shrink: 0;
 }
 
-/* ================= 会话列表（横向滚动） ================= */
-.conversation-list {
-  flex-shrink: 0;
+.logo-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: #6366f1;
   display: flex;
-  flex-direction: row;
   align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.logo-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ececec;
+}
+
+.new-chat-btn {
+  margin: 0 10px 6px;
+  background: #252525;
+  border: 0.5px solid #2e2e2e;
+  border-radius: 8px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-bottom: 1px solid var(--tb-color-border);
-  scrollbar-width: none; /* Firefox */
+  font-size: 13px;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
 }
-.conversation-list::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
+.new-chat-btn:hover { background: #2e2e2e; color: #e2e4e9; }
+
+.sidebar-section-label {
+  font-size: 10px;
+  color: #3a3d4a;
+  padding: 4px 16px 3px;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
 }
+
+.conv-list {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 60px;
+  max-height: 220px;
+  padding: 0 6px;
+}
+.conv-list::-webkit-scrollbar { width: 3px; }
+.conv-list::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 3px; }
 
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  max-width: 130px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  border: 1px solid var(--tb-color-border);
+  padding: 7px 10px;
+  border-radius: 7px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--tb-color-text-secondary);
-  background-color: transparent;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-  white-space: nowrap;
-  overflow: hidden;
+  color: #5b6071;
+  transition: background 0.15s, color 0.15s;
+  gap: 6px;
 }
-.conv-item:hover {
-  background-color: var(--tb-color-bg-input);
-  color: var(--tb-color-text-primary);
-}
-.conv-item.active {
-  border-color: var(--tb-color-primary);
-  color: var(--tb-color-primary);
-  background-color: var(--tb-color-bg-input);
-  font-weight: 500;
-}
-.conv-icon {
-  font-size: 11px;
+.conv-item:hover { background: #1e1e22; color: #c9ccd6; }
+.conv-item.active { background: rgba(99, 102, 241, 0.13); color: #d4d6e0; }
+.conv-item-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-item-del {
   flex-shrink: 0;
+  font-size: 11px;
+  color: transparent;
+  border-radius: 3px;
+  padding: 1px 3px;
+  transition: color 0.15s;
 }
-.conv-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
+.conv-item:hover .conv-item-del { color: #4b5263; }
+.conv-item-del:hover { color: #f56c6c !important; }
+
+.conv-empty {
+  font-size: 11px;
+  color: #2d2f3a;
+  padding: 8px 16px;
 }
 
-.conv-delete-btn {
+.sidebar-divider {
+  border-top: 0.5px solid #222;
+  margin: 8px 10px;
   flex-shrink: 0;
-  display: none;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--tb-color-text-secondary);
-  border-radius: 50%;
-  width: 16px;
-  height: 16px;
-  text-align: center;
-  transition: color 0.2s;
 }
-.conv-item:hover .conv-delete-btn {
-  display: inline-flex;
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-radius: 7px;
+  margin: 1px 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #c9ccd6;
+  transition: background 0.15s;
+}
+.nav-item:hover { background: #1e1e22; }
+.nav-item.active { background: rgba(99, 102, 241, 0.13); color: #a5b4fc; }
+.nav-item.disabled { opacity: 0.42; cursor: default; }
+.nav-item .el-icon { font-size: 15px; flex-shrink: 0; }
+
+.nav-badge {
+  margin-left: auto;
+  font-size: 10px;
+  background: #222;
+  border: 0.5px solid #2e2e2e;
+  border-radius: 10px;
+  padding: 1px 6px;
+  color: #4b5263;
+}
+.nav-soon {
+  margin-left: auto;
+  font-size: 9px;
+  background: #1e1e22;
+  border-radius: 10px;
+  padding: 2px 6px;
+  color: #3a3d4a;
+  white-space: nowrap;
+}
+
+/* ── 底部用户区 ──────────────────────────────────── */
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 8px 10px;
+  border-top: 0.5px solid #222;
+  flex-shrink: 0;
+}
+
+.user-area {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #222;
+  transition: background 0.2s;
+}
+.user-area:hover { background: #2a2a2a; }
+.user-area.guest .user-avatar-guest {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  display: flex;
   align-items: center;
   justify-content: center;
+  color: #4b5263;
+  font-size: 14px;
 }
-.conv-delete-btn:hover {
-  color: #f56c6c;
+
+.user-avatar {
+  background: #6366f1 !important;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
+
+.user-info { flex: 1; min-width: 0; }
+.user-name { font-size: 12px; color: #c9ccd6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-sub { font-size: 10px; color: #3a3d4a; }
+.user-more { color: #3a3d4a; font-size: 14px; }
+
+/* profile popover */
+:global(.tb-profile-popper) {
+  background: #1e1e22 !important;
+  border: 0.5px solid #2e2e32 !important;
+  padding: 8px !important;
+}
+.profile-pop-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #c9ccd6;
+  padding: 4px 8px 10px;
+  border-bottom: 0.5px solid #2e2e32;
+  margin-bottom: 4px;
+}
+.profile-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #c9ccd6;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.profile-pop-item:hover { background: #252528; }
+.profile-pop-item.logout { color: #f56c6c; margin-top: 2px; }
+
+/* ── 主内容区 ───────────────────────────────────── */
+.tb-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1a1a1c;
+}
+
+/* ── HOME 视图 ──────────────────────────────────── */
+.view-home {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 40px 24px;
+}
+
+.home-center {
+  width: 100%;
+  max-width: 680px;
+}
+
+.home-greeting {
+  font-size: 28px;
+  font-weight: 500;
+  color: #e2e4e9;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.home-sub {
+  font-size: 14px;
+  color: #4b5263;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.home-prompts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.prompt-card {
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.prompt-card:hover { background: #2a2a2e; border-color: #6366f1; }
+.prompt-title { font-size: 13px; color: #c9ccd6; line-height: 1.4; margin-bottom: 4px; }
+.prompt-tag { font-size: 11px; color: #3a3d4a; }
+
+.home-input-wrap {
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  border-radius: 14px;
+  display: flex;
+  align-items: flex-end;
+  padding: 12px 14px;
+  gap: 10px;
+  transition: border-color 0.2s;
+}
+.home-input-wrap:focus-within { border-color: #6366f1; }
+
+.home-textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 14px;
+  color: #e2e4e9;
+  line-height: 1.5;
+  min-height: 24px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.home-textarea::placeholder { color: #303034; }
+
+.home-send-btn {
+  width: 32px;
+  height: 32px;
+  background: #6366f1;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+}
+.home-send-btn:hover { opacity: 0.85; }
+
+/* ── CHAT 视图 ──────────────────────────────────── */
+.view-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-header {
+  height: 52px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 0.5px solid #252525;
+  flex-shrink: 0;
+}
+.chat-title { font-size: 13px; color: #4b5263; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-header-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.hdr-icon { font-size: 18px; color: #3a3d4a; cursor: pointer; transition: color 0.2s; }
+.hdr-icon:hover { color: #6b7280; }
 
 .chat-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-  padding-bottom: 130px;
-}
-
-.msg-row {
+  padding: 24px 20px 20px;
   display: flex;
-  gap: 12px;
-  margin-bottom: 30px;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
 }
+.chat-body::-webkit-scrollbar { width: 4px; }
+.chat-body::-webkit-scrollbar-thumb { background: #2e2e32; border-radius: 4px; }
 
-.avatar {
-  font-size: 20px;
-  color: var(--tb-color-primary);
-}
+.msg-row { display: flex; width: 100%; max-width: 820px; }
+.msg-row.user { justify-content: flex-end; }
+.msg-row.ai { justify-content: flex-start; align-items: flex-start; gap: 12px; }
 
-.msg-content {
-  font-size: 15px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  width: 100%;
-  color: var(--tb-color-text-primary);
-}
-
-.msg-content.user {
-  text-align: right;
-  color: var(--tb-color-text-secondary);
-  font-weight: 500;
-}
-
-.input-dock {
-  position: absolute;
-  bottom: 0;
-  width: 100%;
-  background: linear-gradient(180deg, transparent, var(--tb-color-bg-panel) 50%);
-  padding: 15px;
-  box-sizing: border-box;
-}
-
-.gemini-input-wrapper {
-  background-color: var(--tb-color-bg-input);
-  border-radius: 20px;
-  display: flex;
-  align-items: flex-end;
-  padding: 10px 15px;
-  gap: 10px;
-  border: 1px solid transparent;
-  transition: border-color 0.3s, box-shadow 0.3s;
-}
-
-.gemini-input-wrapper:focus-within {
-  border-color: #409eff;
-  box-shadow: 0 4px 15px rgba(64, 158, 255, 0.2);
-}
-
-.custom-textarea {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--tb-color-text-primary);
-  font-size: 15px;
-  line-height: 1.5;
-  min-height: 24px;
-  max-height: 150px;
-  overflow-y: auto;
-  padding: 2px 0;
-  margin: 0;
-  resize: none;
-  outline: none;
-  box-sizing: border-box;
-  word-break: break-all;
-  white-space: pre-wrap;
-}
-
-.custom-textarea::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-textarea::-webkit-scrollbar-thumb {
-  background-color: var(--tb-color-border);
-  border-radius: 4px;
-}
-
-.custom-textarea::placeholder {
-  color: var(--tb-color-text-secondary);
-  opacity: 0.7;
-}
-
-.input-actions-right {
+.ai-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #6366f1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
-.model-selector {
-  color: var(--tb-color-text-secondary);
+.ai-bubble { flex: 1; min-width: 0; }
+.ai-content { font-size: 14px; color: #c8cad4; line-height: 1.7; }
+.ai-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ai-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0.5px solid #2e2e32;
+  border-radius: 6px;
+  padding: 4px 10px;
   font-size: 12px;
+  color: #4b5263;
   cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.ai-action-btn:hover { color: #c9ccd6; border-color: #4b5263; }
+
+.user-bubble {
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #e2e4e9;
+  line-height: 1.6;
+  max-width: 72%;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.send-btn {
+/* ── CHAT 输入区 ─────────────────────────────────── */
+.chat-input-dock {
+  padding: 12px 20px 16px;
+  flex-shrink: 0;
+}
+.chat-input-wrap {
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  border-radius: 14px;
+  display: flex;
+  align-items: flex-end;
+  padding: 12px 14px;
+  gap: 10px;
+  transition: border-color 0.2s;
+  max-width: 820px;
+  margin: 0 auto;
+}
+.chat-input-wrap:focus-within { border-color: #6366f1; }
+
+.chat-textarea {
+  flex: 1;
   background: transparent;
   border: none;
-  color: var(--tb-color-text-primary);
-  font-size: 18px;
+  outline: none;
+  resize: none;
+  font-size: 14px;
+  color: #e2e4e9;
+  line-height: 1.5;
+  min-height: 24px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.chat-textarea::placeholder { color: #303034; }
+
+.chat-send-btn {
+  width: 32px;
+  height: 32px;
+  background: #6366f1;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
   cursor: pointer;
-}
-
-.footer-text {
-  text-align: center;
-  font-size: 12px;
-  color: var(--tb-color-text-secondary);
-  margin-top: 10px;
-  opacity: 0.8;
-}
-
-/* ================= 右侧扩展区基础 ================= */
-.extension-pane {
-  flex: 7;
-  background-color: var(--tb-color-bg-page);
   display: flex;
-  flex-direction: column;
-  height: 100vh;
-  transition: background-color 0.3s ease;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+}
+.chat-send-btn:hover:not(:disabled) { opacity: 0.85; }
+.chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.chat-footer-tip {
+  text-align: center;
+  font-size: 11px;
+  color: #1e1e22;
+  margin-top: 5px;
 }
 
-.extension-content {
+/* ── NOTES 视图 ─────────────────────────────────── */
+.view-notes {
   flex: 1;
   display: flex;
   flex-direction: column;
-  position: relative;
-  height: 100%;
   overflow: hidden;
 }
 
-.right-header {
-  justify-content: space-between;
-  border-bottom: 1px solid var(--tb-color-border);
-  background-color: var(--tb-color-bg-page);
-  transition: background-color 0.3s ease, border-color 0.3s ease;
-}
-
-.header-actions {
-  display: flex;
-  gap: 20px;
-}
-
-.icon-btn {
-  font-size: 24px;
-  color: var(--tb-color-text-secondary);
-  cursor: pointer;
-}
-
-.right-configs {
+.notes-topbar {
+  height: 52px;
+  padding: 0 20px;
   display: flex;
   align-items: center;
-  gap: 15px;
+  justify-content: space-between;
+  border-bottom: 0.5px solid #252525;
+  flex-shrink: 0;
 }
-
-.theme-toggle-btn {
-  color: var(--tb-color-text-secondary) !important;
-  padding: 0;
-  margin-right: 5px;
+.notes-topbar-left { display: flex; align-items: center; gap: 10px; }
+.notes-topbar-title { font-size: 14px; font-weight: 500; color: #e2e4e9; }
+.notes-topbar-count {
+  font-size: 11px;
+  color: #3a3d4a;
+  background: #222;
+  border: 0.5px solid #2e2e2e;
+  border-radius: 20px;
+  padding: 1px 8px;
 }
-.theme-toggle-btn:hover {
-  color: var(--tb-color-primary) !important;
-}
-
-.user-avatar {
-  width: 32px;
-  height: 32px;
-  background-color: var(--tb-color-primary);
-  color: #fff;
-  border-radius: 50%;
-  text-align: center;
-  line-height: 32px;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-/* ================= Markdown 富文本样式 ================= */
-:deep(.markdown-body p) { margin-top: 0; margin-bottom: 10px; }
-:deep(.markdown-body strong) { font-weight: 600; color: var(--tb-color-primary); }
-:deep(.markdown-body ul), :deep(.markdown-body ol) { margin-top: 0; margin-bottom: 10px; padding-left: 20px; }
-:deep(.markdown-body li) { margin-bottom: 5px; }
-:deep(.markdown-body hr) { border: 0; border-top: 1px solid var(--tb-color-border); margin: 15px 0; }
-:deep(.markdown-body pre), :deep(.markdown-body code) { background-color: var(--tb-color-bg-input); border-radius: 4px; font-family: monospace; }
-:deep(.markdown-body code) { padding: 2px 4px; color: #e83e8c; }
-:deep(.markdown-body pre code) { padding: 10px; display: block; color: var(--tb-color-text-primary); overflow-x: auto; }
-
-/* ================= 局部抽屉核心 ================= */
-:deep(.el-overlay) {
-  position: absolute !important;
-  top: 0; left: 0; width: 100%; height: 100%;
-}
-:deep(.notes-drawer) {
-  position: absolute !important;
-  background-color: var(--tb-color-bg-panel);
-  color: var(--tb-color-text-primary);
-}
-:deep(.el-drawer__body) { padding: 0; }
-
-.drawer-container { display: flex; flex-direction: column; height: 100%; padding: 10px 20px; background-color: var(--tb-color-bg-panel); }
-.drawer-header { height: 40px; display: flex; align-items: center; margin-bottom: 20px; }
-.drawer-section { margin-bottom: 25px; }
-.section-title { font-size: 12px; color: var(--tb-color-text-secondary); font-weight: bold; margin-bottom: 10px; padding: 0 10px; }
-.menu-item { display: flex; align-items: center; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--tb-color-text-primary); transition: background-color 0.2s; margin-bottom: 4px; }
-.menu-item:hover { background-color: var(--tb-color-bg-input); }
-.menu-item.active { background-color: #1a3c63; color: #e3e3e3; }
-.light .menu-item.active { background-color: #d3e3fd; color: #041e49; }
-.menu-item .icon { margin-right: 10px; font-size: 16px; }
-.drawer-footer { margin-top: auto; padding-bottom: 20px; }
-
-/* ================= AI 消息气泡框样式 ================= */
-.ai-msg-box {
-  background-color: var(--tb-color-bg-panel);
-  border: 1px solid var(--tb-color-border);
-  border-radius: 12px;
-  padding: 15px 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-.ai-msg-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 15px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--tb-color-border);
-}
-
-.save-action-btn {
-  color: #ff4d4f;
-  font-size: 14px;
+.notes-topbar-right { display: flex; align-items: center; gap: 10px; }
+.topbar-btn {
+  font-size: 13px;
+  color: #6b7280;
   cursor: pointer;
-  transition: opacity 0.2s;
-  user-select: none;
-}
-
-.save-action-btn:hover {
-  opacity: 0.7;
-}
-
-.action-text-btn {
-  cursor: pointer;
-  font-size: 15px;
-  color: var(--tb-color-text-secondary);
   transition: color 0.2s;
 }
-.action-text-btn:hover {
-  color: var(--tb-color-primary);
-}
-.action-text-btn.danger {
-  color: #f56c6c;
-  font-weight: bold;
-}
-.action-text-btn.danger:hover {
-  color: #ff8989;
-}
+.topbar-btn:hover { color: #c9ccd6; }
+.topbar-btn.primary { color: #818cf8; font-weight: 500; }
+.topbar-btn.primary:hover { color: #a5b4fc; }
+.topbar-btn.danger { color: #f56c6c; font-weight: 500; }
 
-/* ================= AI 总结弹窗 ================= */
-.summary-loading {
+/* ── Markdown 内容 ───────────────────────────────── */
+:deep(.markdown-body p) { margin: 0 0 8px; }
+:deep(.markdown-body h1),
+:deep(.markdown-body h2),
+:deep(.markdown-body h3) { color: #e2e4e9; font-weight: 500; margin: 12px 0 6px; }
+:deep(.markdown-body strong) { color: #a5b4fc; font-weight: 600; }
+:deep(.markdown-body ul),
+:deep(.markdown-body ol) { padding-left: 18px; margin: 4px 0 8px; }
+:deep(.markdown-body li) { margin-bottom: 4px; color: #c8cad4; }
+:deep(.markdown-body code) { background: #252528; border-radius: 4px; padding: 1px 5px; font-size: 12px; color: #e879f9; font-family: monospace; }
+:deep(.markdown-body pre) { background: #252528; border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 8px 0; }
+:deep(.markdown-body pre code) { padding: 0; color: #c9ccd6; font-size: 13px; }
+:deep(.markdown-body hr) { border: 0; border-top: 0.5px solid #2e2e32; margin: 12px 0; }
+
+/* ── el-dialog 暗色适配 ────────────────────────────── */
+:deep(.tb-dialog .el-dialog) {
+  background: #1e1e22 !important;
+  border: 0.5px solid #2e2e32;
+  border-radius: 14px;
+}
+:deep(.tb-dialog .el-dialog__header) {
+  background: #252528;
+  border-bottom: 0.5px solid #2e2e32;
+  padding: 14px 18px;
+  cursor: move;
+}
+:deep(.tb-dialog .el-dialog__title) { color: #c9ccd6; font-size: 14px; }
+:deep(.tb-dialog .el-dialog__headerbtn .el-icon) { color: #4b5263; }
+:deep(.tb-dialog .el-dialog__body) { color: #c9ccd6; padding: 20px 20px 10px; }
+:deep(.tb-dialog .el-dialog__footer) { border-top: 0.5px solid #2e2e32; padding: 12px 18px; }
+
+.dialog-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
   padding: 40px 0;
-  color: var(--tb-color-text-secondary);
+  color: #4b5263;
   font-size: 14px;
 }
-.summary-loading .el-icon {
-  font-size: 28px;
-  color: var(--tb-color-primary);
-}
-.summary-topic {
-  font-size: 13px;
-  color: var(--tb-color-text-secondary);
-  margin-bottom: 12px;
-}
+.dialog-loading .el-icon { font-size: 28px; color: #6366f1; }
+
+.summary-topic { font-size: 12px; color: #4b5263; margin-bottom: 10px; }
 .summary-content {
-  max-height: 480px;
+  max-height: 440px;
   overflow-y: auto;
-  line-height: 1.8;
   font-size: 14px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.8;
+  color: #c9ccd6;
 }
 </style>
