@@ -1,5 +1,8 @@
 <template>
   <div class="tool-log-workspace">
+    <el-tabs v-model="activeTab" class="tool-log-tabs" @tab-change="onTabChange">
+      <el-tab-pane label="调用记录" name="list">
+
     <!-- ═══════════════ 筛选区 ═══════════════ -->
     <div class="filter-bar">
       <div class="filter-row">
@@ -123,6 +126,143 @@
         @size-change="onSizeChange"
       />
     </div>
+
+      </el-tab-pane>
+
+      <!-- ═══════════════ Tab 2：统计概览 ═══════════════ -->
+      <el-tab-pane label="统计概览" name="stats">
+        <!-- 统计筛选区 -->
+        <div class="filter-bar">
+          <div class="filter-row">
+            <div class="filter-item">
+              <span class="filter-label">工具名</span>
+              <el-select v-model="statsFilters.toolName" placeholder="全部" clearable size="default" class="filter-select">
+                <el-option label="全部" value="" />
+                <el-option label="ragSearch" value="ragSearch" />
+                <el-option label="summarizeArticle" value="summarizeArticle" />
+              </el-select>
+            </div>
+            <div class="filter-item">
+              <span class="filter-label">调用来源</span>
+              <el-select v-model="statsFilters.callSource" placeholder="全部" clearable size="default" class="filter-select">
+                <el-option label="全部" value="" />
+                <el-option label="FORCE_ROUTE" value="FORCE_ROUTE" />
+                <el-option label="MODEL_TOOL_CALL" value="MODEL_TOOL_CALL" />
+              </el-select>
+            </div>
+            <div class="filter-item">
+              <span class="filter-label">会话ID</span>
+              <el-input
+                v-model="statsFilters.conversationId"
+                placeholder="conversationId"
+                clearable
+                type="number"
+                class="filter-input"
+              />
+            </div>
+            <div class="filter-item">
+              <span class="filter-label">时间范围</span>
+              <el-date-picker
+                v-model="statsTimeRange"
+                type="datetimerange"
+                range-separator="至"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                class="filter-date"
+              />
+            </div>
+            <div class="filter-actions">
+              <el-button type="primary" :loading="statsLoading" @click="handleStatsSearch">查询</el-button>
+              <el-button @click="handleStatsReset">重置</el-button>
+              <el-button :icon="RefreshRight" :loading="statsLoading" @click="fetchStats">刷新</el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 顶部汇总卡片 -->
+        <div class="stats-summary" v-loading="statsLoading">
+          <div class="summary-card">
+            <div class="summary-label">总调用量</div>
+            <div class="summary-value">{{ summary.totalCount }}</div>
+          </div>
+          <div class="summary-card danger" v-if="summary.totalFailure > 0">
+            <div class="summary-label">总失败数</div>
+            <div class="summary-value">{{ summary.totalFailure }}</div>
+          </div>
+          <div class="summary-card" v-else>
+            <div class="summary-label">总失败数</div>
+            <div class="summary-value zero">{{ summary.totalFailure }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">整体失败率</div>
+            <div class="summary-value">{{ summary.overallFailureRate }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">工具数量</div>
+            <div class="summary-value">{{ statsData.length }}</div>
+          </div>
+        </div>
+
+        <!-- 统计表 -->
+        <div class="table-container" v-if="statsLoading || statsData.length">
+          <el-table
+            v-loading="statsLoading"
+            :data="statsData"
+            stripe
+            size="small"
+            class="tool-log-table"
+            empty-text="暂无统计数据"
+          >
+            <el-table-column prop="toolName" label="工具名" min-width="160" show-overflow-tooltip />
+            <el-table-column label="类型" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag :type="toolTypeTag(row.toolType)" size="small" effect="dark">
+                  {{ row.toolType || '-' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="totalCount" label="调用量" width="110" align="right">
+              <template #default="{ row }">
+                <span class="num">{{ row.totalCount ?? 0 }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="successCount" label="成功" width="110" align="right">
+              <template #default="{ row }">
+                <span class="num success">{{ row.successCount ?? 0 }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="失败" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  :type="(row.failureCount ?? 0) > 0 ? 'danger' : 'success'"
+                  size="small"
+                  effect="dark"
+                >
+                  {{ row.failureCount ?? 0 }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="失败率" width="120" align="right">
+              <template #default="{ row }">
+                <span :class="['num', (row.failureRate ?? 0) > 0 ? 'danger' : '']">
+                  {{ formatRate(row.failureRate) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="平均耗时" width="130" align="right">
+              <template #default="{ row }">
+                <span class="num duration">{{ formatDuration(row.avgDurationMs) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <!-- 空状态 -->
+        <el-empty v-else description="暂无工具调用统计数据" class="stats-empty" />
+
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- ═══════════════ 详情弹窗 ═══════════════ -->
     <el-dialog
@@ -250,11 +390,90 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Tickets, Close, Loading, CopyDocument } from '@element-plus/icons-vue'
-import { pageToolCallLogs, getToolCallLogDetail } from '@/api/toolLog'
+import { Tickets, Close, Loading, CopyDocument, RefreshRight } from '@element-plus/icons-vue'
+import { pageToolCallLogs, getToolCallLogDetail, getToolCallStats } from '@/api/toolLog'
 import { makeAllDialogsDraggable } from '@/utils/draggable'
+
+// ─── Tab 切换 ────────────────────────────────────────
+const activeTab = ref('list')
+function onTabChange(name) {
+  if (name === 'stats' && !statsLoaded.value) fetchStats()
+}
+
+// ─── 统计概览 ────────────────────────────────────────
+const statsFilters = reactive({
+  toolName: '',
+  callSource: '',
+  conversationId: ''
+})
+const statsTimeRange = ref(null)
+const statsLoading = ref(false)
+const statsLoaded = ref(false)
+const statsData = ref([])
+
+const summary = computed(() => {
+  const totalCount = statsData.value.reduce((s, r) => s + (r.totalCount || 0), 0)
+  const totalFailure = statsData.value.reduce((s, r) => s + (r.failureCount || 0), 0)
+  const rate = totalCount > 0 ? (totalFailure / totalCount) : 0
+  return {
+    totalCount,
+    totalFailure,
+    overallFailureRate: totalCount > 0 ? (rate * 100).toFixed(2) + '%' : '-'
+  }
+})
+
+function buildStatsParams() {
+  const [start, end] = Array.isArray(statsTimeRange.value) ? statsTimeRange.value : []
+  return {
+    toolName: statsFilters.toolName || undefined,
+    callSource: statsFilters.callSource || undefined,
+    conversationId: statsFilters.conversationId === '' ? undefined : statsFilters.conversationId,
+    startTime: start || undefined,
+    endTime: end || undefined
+  }
+}
+
+async function fetchStats() {
+  statsLoading.value = true
+  try {
+    const res = await getToolCallStats(buildStatsParams())
+    if (res.code === 200 || res.code === 1) {
+      statsData.value = Array.isArray(res.data) ? res.data : []
+      statsLoaded.value = true
+    } else {
+      ElMessage.error(res.msg || res.message || '工具调用统计加载失败')
+    }
+  } catch {
+    ElMessage.error('工具调用统计加载失败')
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+function handleStatsSearch() { fetchStats() }
+function handleStatsReset() {
+  statsFilters.toolName = ''
+  statsFilters.callSource = ''
+  statsFilters.conversationId = ''
+  statsTimeRange.value = null
+  fetchStats()
+}
+
+function formatRate(r) {
+  if (r == null || isNaN(r)) return '-'
+  return (Number(r) * 100).toFixed(2) + '%'
+}
+function formatDuration(d) {
+  if (d == null || isNaN(d)) return '-'
+  return Number(d).toFixed(2) + ' ms'
+}
+function toolTypeTag(t) {
+  if (t === 'RAG') return 'primary'
+  if (t === 'SUMMARY') return 'warning'
+  return 'info'
+}
 
 // ─── 弹窗拖动 ────────────────────────────────────────
 function onDialogOpen() {
@@ -395,6 +614,82 @@ onMounted(fetchList)
   padding: 16px 20px;
   overflow: hidden;
 }
+
+/* ── Tabs 暗色 ───────────────────────────── */
+.tool-log-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+:deep(.tool-log-tabs > .el-tabs__header) {
+  margin: 0 0 12px;
+  border-bottom: 0.5px solid #2e2e32;
+}
+:deep(.tool-log-tabs .el-tabs__nav-wrap::after) {
+  background-color: transparent;
+}
+:deep(.tool-log-tabs .el-tabs__item) {
+  color: #6b7280;
+  font-size: 13px;
+  height: 36px;
+  line-height: 36px;
+}
+:deep(.tool-log-tabs .el-tabs__item:hover) { color: #c9ccd6; }
+:deep(.tool-log-tabs .el-tabs__item.is-active) { color: #a5b4fc; }
+:deep(.tool-log-tabs .el-tabs__active-bar) { background-color: #6366f1; }
+:deep(.tool-log-tabs > .el-tabs__content),
+:deep(.tool-log-tabs .el-tab-pane) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── 统计汇总卡片 ──────────────────────── */
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+.summary-card {
+  background: #1e1e22;
+  border: 0.5px solid #2e2e32;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.summary-card.danger { border-color: #5f2a31; background: #2a1418; }
+.summary-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+.summary-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: #e2e4e9;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.5px;
+}
+.summary-value.zero { color: #59c585; }
+.summary-card.danger .summary-value { color: #fca5a5; }
+
+/* 数字列 */
+.num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c9ccd6; }
+.num.success { color: #59c585; }
+.num.danger { color: #fca5a5; }
+.num.duration { color: #a5b4fc; }
+
+.stats-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+:deep(.stats-empty .el-empty__description p) { color: #4b5263; }
+:deep(.stats-empty .el-empty__image svg path) { fill: #2e2e32; }
 
 /* ── 筛选区 ──────────────────────────────────── */
 .filter-bar {

@@ -71,15 +71,29 @@
             <h2
               v-else
               class="expanded-title"
+              :class="{ 'is-placeholder': !expandedNote.title }"
               title="双击标题可编辑"
               @dblclick="startEditTitle"
             >
-              {{ expandedNote.title }}
+              {{ expandedNote.title || (isDraft ? '点击输入标题…' : '') }}
             </h2>
             <span v-if="inlineSaving" class="inline-saving">保存中…</span>
           </div>
           <div class="header-right">
-            <el-button type="primary" :loading="summaryLoading" @click="summarizeNote(expandedNote)">
+            <el-button
+              v-if="isDraft"
+              type="primary"
+              :loading="inlineSaving"
+              @click="saveDraft"
+            >
+              保存笔记
+            </el-button>
+            <el-button
+              v-else
+              type="primary"
+              :loading="summaryLoading"
+              @click="summarizeNote(expandedNote)"
+            >
               AI 总结
             </el-button>
           </div>
@@ -91,12 +105,20 @@
           class="expanded-body-vditor"
         ></div>
         <div
-          v-if="!editingContent"
+          v-if="!editingContent && expandedNote.content"
           class="expanded-body markdown-body"
           title="双击进入编辑（Ctrl+Enter 保存，Esc 取消）"
           v-html="parseMarkdown(expandedNote.content)"
           @dblclick="startEditContent"
         ></div>
+        <div
+          v-else-if="!editingContent && !expandedNote.content"
+          class="expanded-body expanded-body-empty"
+          title="双击此处开始编辑"
+          @dblclick="startEditContent"
+        >
+          {{ isDraft ? '双击此处开始写笔记内容…' : '（暂无内容，双击编辑）' }}
+        </div>
         <div v-if="editingContent" class="editor-action-bar">
           <span class="editor-hint">Ctrl+Enter 保存 · Esc 取消</span>
           <el-button size="small" @click="cancelContentEdit">取消</el-button>
@@ -278,12 +300,17 @@ const fetchNotes = async () => {
 
 onMounted(() => { fetchNotes() })
 
-// ── 新建 / 编辑 ────────────────────────────────────────
+// ── 新建笔记：直接进入全屏草稿编辑模式 ──────────────────
+const isDraft = ref(false)
 const openAddNote = (initialContent = '') => {
-  dialogTitle.value = '✨ 录入新知识'
-  currentNoteId.value = null
-  newNote.value = { title: '', content: initialContent }
-  dialogVisible.value = true
+  expandedNote.value = {
+    id: null,
+    title: '',
+    content: initialContent || ''
+  }
+  isDraft.value = true
+  // 默认让用户先填标题
+  nextTick(() => startEditTitle())
 }
 
 // ── 保存 ───────────────────────────────────────────────
@@ -342,11 +369,12 @@ const deleteNote = (id) => {
 }
 
 // ── 展开 / 收起 ────────────────────────────────────────
-const expandNote = (note) => { expandedNote.value = note }
+const expandNote = (note) => { expandedNote.value = note; isDraft.value = false }
 const closeExpandedNote = () => {
-  // 若正在编辑则先保存
   if (editingTitle.value) commitTitle()
   if (editingContent.value) commitContent()
+  // 草稿没保存就退出 → 静默丢弃
+  isDraft.value = false
   expandedNote.value = null
 }
 
@@ -383,10 +411,15 @@ async function commitTitle() {
   const newTitle = inlineTitle.value.trim()
   editingTitle.value = false
   if (!newTitle) {
-    ElMessage.warning('标题不能为空')
+    if (!isDraft.value) ElMessage.warning('标题不能为空')
     return
   }
   if (newTitle === expandedNote.value.title) return
+  if (isDraft.value) {
+    // 草稿：仅本地更新，等用户点"保存笔记"
+    expandedNote.value.title = newTitle
+    return
+  }
   await persistNote({ title: newTitle, content: expandedNote.value.content })
 }
 
@@ -405,10 +438,14 @@ async function commitContent() {
   editingContent.value = false
   destroyVditor()
   if (!newContent.trim()) {
-    ElMessage.warning('内容不能为空')
+    if (!isDraft.value) ElMessage.warning('内容不能为空')
     return
   }
   if (newContent === expandedNote.value.content) return
+  if (isDraft.value) {
+    expandedNote.value.content = newContent
+    return
+  }
   await persistNote({ title: expandedNote.value.title, content: newContent })
 }
 
@@ -466,6 +503,38 @@ async function persistNote({ title, content }) {
       ElMessage.success('已保存')
     } else {
       ElMessage.error(res.msg || '保存失败')
+    }
+  } catch {
+    ElMessage.error('保存失败，接口异常')
+  } finally {
+    inlineSaving.value = false
+  }
+}
+
+// 草稿：手动点"保存笔记"才落库
+async function saveDraft() {
+  if (!expandedNote.value) return
+  const title = (expandedNote.value.title || '').trim()
+  const content = (expandedNote.value.content || '').trim()
+  if (!title) {
+    ElMessage.warning('请输入笔记标题')
+    return
+  }
+  if (!content) {
+    ElMessage.warning('请输入笔记内容')
+    return
+  }
+  inlineSaving.value = true
+  try {
+    const res = await request.post('/save-note', { title, content })
+    if (res.code === 200 || res.code === 1) {
+      ElMessage.success('笔记已保存到知识库')
+      isDraft.value = false
+      expandedNote.value = null
+      currentPage.value = 1
+      fetchNotes()
+    } else {
+      ElMessage.error(res.msg || res.message || '保存失败')
     }
   } catch {
     ElMessage.error('保存失败，接口异常')
@@ -729,6 +798,7 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
   transition: background 0.15s;
 }
 .expanded-title:hover { background: #252528; }
+.expanded-title.is-placeholder { color: #4b5263; font-weight: 400; font-style: italic; }
 
 .expanded-title-input {
   margin: 0;
@@ -750,6 +820,22 @@ defineExpose({ openAddNote, isManageMode, selectedIds, toggleManageMode, batchDe
 }
 
 .expanded-body { cursor: text; }
+.expanded-body-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  color: #4b5263;
+  font-style: italic;
+  font-size: 14px;
+  border: 0.5px dashed #2e2e32;
+  border-radius: 10px;
+  margin: 20px 28px;
+  background: #161618;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.expanded-body-empty:hover { border-color: #6366f1; color: #a5b4fc; }
 
 /* Vditor 编辑器容器 */
 .expanded-body-vditor {

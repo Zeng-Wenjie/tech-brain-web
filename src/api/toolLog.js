@@ -41,3 +41,11 @@ export function pageToolCallLogs(params) {
 export function getToolCallLogDetail(id) {
   return request.get(`${BASE}/${id}`)
 }
+
+/**
+ * 按工具名维度的调用统计
+ * @param {Object} params { toolName, conversationId, callSource, startTime, endTime }
+ */
+export function getToolCallStats(params) {
+  return request.get(`${BASE}/stats/tool`, { params: cleanParams(params) })
+}
