@@ -49,3 +49,11 @@ export function getToolCallLogDetail(id) {
 export function getToolCallStats(params) {
   return request.get(`${BASE}/stats/tool`, { params: cleanParams(params) })
 }
+
+/**
+ * RAG 命中率统计（固定统计 ragSearch，不接受 toolName 参数）
+ * @param {Object} params { conversationId, callSource, startTime, endTime }
+ */
+export function getRagHitStats(params) {
+  return request.get(`${BASE}/stats/rag-hit`, { params: cleanParams(params) })
+}

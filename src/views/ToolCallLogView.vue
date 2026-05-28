@@ -175,7 +175,7 @@
             <div class="filter-actions">
               <el-button type="primary" :loading="statsLoading" @click="handleStatsSearch">查询</el-button>
               <el-button @click="handleStatsReset">重置</el-button>
-              <el-button :icon="RefreshRight" :loading="statsLoading" @click="fetchStats">刷新</el-button>
+              <el-button :icon="RefreshRight" :loading="statsLoading || ragHitStatsLoading" @click="handleStatsRefresh">刷新</el-button>
             </div>
           </div>
         </div>
@@ -204,7 +204,47 @@
           </div>
         </div>
 
-        <!-- 统计表 -->
+        <!-- RAG 命中率分析 -->
+        <div class="rag-section" v-loading="ragHitStatsLoading">
+          <div class="rag-section-header">
+            <div class="rag-section-title">RAG 命中率分析</div>
+            <div class="rag-section-hint">
+              该统计固定分析 <span class="hint-strong">ragSearch</span> 工具，受会话、调用来源和时间范围影响（不受工具名筛选影响）
+            </div>
+          </div>
+          <div class="rag-cards">
+            <div class="rag-card">
+              <div class="rag-label">RAG 调用次数</div>
+              <div class="rag-value">{{ ragHitStats.totalCount }}</div>
+            </div>
+            <div class="rag-card">
+              <div class="rag-label">命中次数</div>
+              <div class="rag-value success">{{ ragHitStats.hitCount }}</div>
+            </div>
+            <div class="rag-card" :class="{ warn: ragHitStats.emptyCount > 0 }">
+              <div class="rag-label">未命中次数</div>
+              <div class="rag-value" :class="{ warn: ragHitStats.emptyCount > 0 }">{{ ragHitStats.emptyCount }}</div>
+            </div>
+            <div class="rag-card">
+              <div class="rag-label">命中率</div>
+              <div class="rag-value">{{ formatPercent(ragHitStats.hitRate) }}</div>
+            </div>
+            <div class="rag-card">
+              <div class="rag-label">平均命中数</div>
+              <div class="rag-value">{{ formatNumber(ragHitStats.avgHitSize, 2) }}</div>
+            </div>
+            <div class="rag-card">
+              <div class="rag-label">最大命中数</div>
+              <div class="rag-value">{{ ragHitStats.maxHitSize }}</div>
+            </div>
+          </div>
+          <div v-if="ragHitStats.unknownCount > 0" class="rag-unknown-tip">
+            <el-icon><Warning /></el-icon>
+            存在 <strong>{{ ragHitStats.unknownCount }}</strong> 条无法解析的历史日志
+          </div>
+        </div>
+
+        <!-- 工具统计表 -->
         <div class="table-container" v-if="statsLoading || statsData.length">
           <el-table
             v-loading="statsLoading"
@@ -392,14 +432,71 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Tickets, Close, Loading, CopyDocument, RefreshRight } from '@element-plus/icons-vue'
-import { pageToolCallLogs, getToolCallLogDetail, getToolCallStats } from '@/api/toolLog'
+import { Tickets, Close, Loading, CopyDocument, RefreshRight, Warning } from '@element-plus/icons-vue'
+import { pageToolCallLogs, getToolCallLogDetail, getToolCallStats, getRagHitStats } from '@/api/toolLog'
 import { makeAllDialogsDraggable } from '@/utils/draggable'
 
 // ─── Tab 切换 ────────────────────────────────────────
 const activeTab = ref('list')
 function onTabChange(name) {
-  if (name === 'stats' && !statsLoaded.value) fetchStats()
+  if (name === 'stats' && !statsLoaded.value) {
+    fetchStats()
+    loadRagHitStats()
+  }
+}
+
+// ─── RAG 命中率统计 ─────────────────────────────────
+const ragHitStatsLoading = ref(false)
+const ragHitStats = ref({
+  totalCount: 0,
+  hitCount: 0,
+  emptyCount: 0,
+  unknownCount: 0,
+  hitRate: 0,
+  avgHitSize: 0,
+  maxHitSize: 0
+})
+
+async function loadRagHitStats() {
+  // 注意：不传 toolName（接口固定统计 ragSearch）
+  const [start, end] = Array.isArray(statsTimeRange.value) ? statsTimeRange.value : []
+  const params = {
+    conversationId: statsFilters.conversationId === '' ? undefined : statsFilters.conversationId,
+    callSource: statsFilters.callSource || undefined,
+    startTime: start || undefined,
+    endTime: end || undefined
+  }
+  ragHitStatsLoading.value = true
+  try {
+    const res = await getRagHitStats(params)
+    if (res.code === 200 || res.code === 1) {
+      const d = res.data || {}
+      ragHitStats.value = {
+        totalCount: d.totalCount ?? 0,
+        hitCount: d.hitCount ?? 0,
+        emptyCount: d.emptyCount ?? 0,
+        unknownCount: d.unknownCount ?? 0,
+        hitRate: d.hitRate ?? 0,
+        avgHitSize: d.avgHitSize ?? 0,
+        maxHitSize: d.maxHitSize ?? 0
+      }
+    } else {
+      ElMessage.error(res.msg || res.message || 'RAG 命中率统计加载失败')
+    }
+  } catch {
+    ElMessage.error('RAG 命中率统计加载失败')
+  } finally {
+    ragHitStatsLoading.value = false
+  }
+}
+
+function formatPercent(value) {
+  if (value == null || isNaN(value)) return '0.00%'
+  return (Number(value) * 100).toFixed(2) + '%'
+}
+function formatNumber(value, digits = 2) {
+  if (value == null || isNaN(value)) return Number(0).toFixed(digits)
+  return Number(value).toFixed(digits)
 }
 
 // ─── 统计概览 ────────────────────────────────────────
@@ -452,13 +549,21 @@ async function fetchStats() {
   }
 }
 
-function handleStatsSearch() { fetchStats() }
+function handleStatsSearch() {
+  fetchStats()
+  loadRagHitStats()
+}
+function handleStatsRefresh() {
+  fetchStats()
+  loadRagHitStats()
+}
 function handleStatsReset() {
   statsFilters.toolName = ''
   statsFilters.callSource = ''
   statsFilters.conversationId = ''
   statsTimeRange.value = null
   fetchStats()
+  loadRagHitStats()
 }
 
 function formatRate(r) {
@@ -675,6 +780,87 @@ onMounted(fetchList)
 }
 .summary-value.zero { color: #59c585; }
 .summary-card.danger .summary-value { color: #fca5a5; }
+
+/* ── RAG 命中率分析 ───────────────────────── */
+.rag-section {
+  background: #1e1e22;
+  border: 0.5px solid #2e2e32;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+.rag-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 0.5px solid #252525;
+}
+.rag-section-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e4e9;
+  letter-spacing: 0.3px;
+}
+.rag-section-hint {
+  font-size: 11px;
+  color: #4b5263;
+  line-height: 1.4;
+}
+.rag-section-hint .hint-strong {
+  color: #a5b4fc;
+  font-family: ui-monospace, monospace;
+  background: #252528;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.rag-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+.rag-card {
+  background: #161618;
+  border: 0.5px solid #2e2e32;
+  border-radius: 8px;
+  padding: 10px 12px;
+  transition: border-color 0.15s;
+}
+.rag-card.warn { border-color: #5f4a18; background: #2a1f0d; }
+.rag-label {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+.rag-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #e2e4e9;
+  letter-spacing: 0.3px;
+}
+.rag-value.success { color: #59c585; }
+.rag-value.warn { color: #f5a524; }
+.rag-unknown-tip {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #f5a524;
+  padding: 6px 10px;
+  background: rgba(245, 165, 36, 0.08);
+  border-radius: 6px;
+}
+.rag-unknown-tip strong { color: #fbbf24; font-weight: 600; }
+.rag-unknown-tip .el-icon { font-size: 14px; }
+
+@media (max-width: 1280px) {
+  .rag-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 /* 数字列 */
 .num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c9ccd6; }
