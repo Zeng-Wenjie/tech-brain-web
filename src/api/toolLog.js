@@ -57,3 +57,15 @@ export function getToolCallStats(params) {
 export function getRagHitStats(params) {
   return request.get(`${BASE}/stats/rag-hit`, { params: cleanParams(params) })
 }
+
+/**
+ * 导出工具调用日志 CSV
+ * 注意：不传 pageNum / pageSize / userId；按当前筛选条件全量导出
+ * @param {Object} params { traceId, conversationId, toolName, toolType, callSource, success, startTime, endTime, includeDetail }
+ */
+export function exportToolCallLogs(params) {
+  return request.get(`${BASE}/export`, {
+    params: cleanParams(params),
+    responseType: 'blob'
+  })
+}

@@ -31,6 +31,10 @@ function isAuthEndpoint(url = '') {
 }
 
 request.interceptors.response.use(response => {
+  // 文件下载等场景需要完整 response（要读取 headers / blob），不能剥到 .data
+  if (response.config?.responseType === 'blob') {
+    return response
+  }
   const res = response.data
   if (res && res.code === 401 && !isAuthEndpoint(response.config?.url)) {
     handleUnauthorized()

@@ -56,6 +56,20 @@
         <div class="filter-actions">
           <el-button type="primary" :loading="loading" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
+          <el-checkbox
+            v-model="exportIncludeDetail"
+            class="export-detail-check"
+            :title="'勾选后导出会包含完整 argumentsJson / resultJson / finalAnswer 等长字段'"
+          >
+            导出完整详情
+          </el-checkbox>
+          <el-button
+            :icon="Download"
+            :loading="exportLoading"
+            @click="handleExportCsv"
+          >
+            导出 CSV
+          </el-button>
         </div>
       </div>
     </div>
@@ -432,8 +446,14 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Tickets, Close, Loading, CopyDocument, RefreshRight, Warning } from '@element-plus/icons-vue'
-import { pageToolCallLogs, getToolCallLogDetail, getToolCallStats, getRagHitStats } from '@/api/toolLog'
+import { Tickets, Close, Loading, CopyDocument, RefreshRight, Warning, Download } from '@element-plus/icons-vue'
+import {
+  pageToolCallLogs,
+  getToolCallLogDetail,
+  getToolCallStats,
+  getRagHitStats,
+  exportToolCallLogs
+} from '@/api/toolLog'
 import { makeAllDialogsDraggable } from '@/utils/draggable'
 
 // ─── Tab 切换 ────────────────────────────────────────
@@ -456,6 +476,76 @@ const ragHitStats = ref({
   avgHitSize: 0,
   maxHitSize: 0
 })
+
+// ─── 导出 CSV ─────────────────────────────────────
+const exportLoading = ref(false)
+const exportIncludeDetail = ref(false)
+
+function parseFilenameFromCD(cd) {
+  if (!cd) return null
+  // 支持 RFC5987 的 filename*=UTF-8''xxx（中文文件名常用）
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(cd)
+  if (star && star[1]) {
+    try { return decodeURIComponent(star[1].replace(/^["']|["']$/g, '')) } catch { /* noop */ }
+  }
+  const m = /filename=([^;]+)/i.exec(cd)
+  if (m && m[1]) return m[1].trim().replace(/^["']|["']$/g, '')
+  return null
+}
+
+async function readBlobAsText(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => resolve('')
+    reader.readAsText(blob, 'utf-8')
+  })
+}
+
+async function handleExportCsv() {
+  // 用当前筛选构造参数（与 fetchList 一致），但不传分页
+  const params = { ...buildParams() }
+  delete params.pageNum
+  delete params.pageSize
+  params.includeDetail = exportIncludeDetail.value ? true : false
+
+  exportLoading.value = true
+  try {
+    const response = await exportToolCallLogs(params)
+    const blob = response.data
+
+    // 后端可能在出错时返回 JSON
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      const text = await readBlobAsText(blob)
+      let msg = '导出失败'
+      try {
+        const obj = JSON.parse(text)
+        msg = obj.msg || obj.message || msg
+      } catch { /* keep default */ }
+      ElMessage.error(msg)
+      return
+    }
+
+    const cd = response.headers?.['content-disposition']
+      || response.headers?.['Content-Disposition']
+    const filename = parseFilenameFromCD(cd) || 'tool-call-log.csv'
+
+    // 触发下载（自动 BOM？后端应当带 ﻿ 解决 Excel 中文乱码）
+    const url = URL.createObjectURL(new Blob([blob], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
 
 async function loadRagHitStats() {
   // 注意：不传 toolName（接口固定统计 ragSearch）
@@ -905,7 +995,18 @@ onMounted(fetchList)
 .filter-select { width: 150px; }
 .filter-input  { width: 160px; }
 .filter-date   { width: 320px; }
-.filter-actions { display: flex; gap: 8px; margin-left: auto; }
+.filter-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+.export-detail-check { margin: 0 4px 0 8px; }
+:deep(.export-detail-check .el-checkbox__label) { color: #9ca3af; font-size: 12px; }
+:deep(.export-detail-check .el-checkbox__inner) {
+  background: #252528;
+  border-color: #3a3d4a;
+}
+:deep(.export-detail-check.is-checked .el-checkbox__inner) {
+  background: #6366f1;
+  border-color: #6366f1;
+}
+:deep(.export-detail-check.is-checked .el-checkbox__label) { color: #a5b4fc; }
 
 /* el-input / el-select 暗色微调 */
 .filter-bar :deep(.el-input__wrapper),
