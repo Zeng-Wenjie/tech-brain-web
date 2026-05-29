@@ -71,6 +71,16 @@
         <span v-show="!sidebarCollapsed">工具调用日志</span>
       </div>
 
+      <div
+        class="nav-item"
+        :class="{ active: currentView === 'files' }"
+        :title="sidebarCollapsed ? '文件管理' : ''"
+        @click="currentView = 'files'"
+      >
+        <el-icon><Folder /></el-icon>
+        <span v-show="!sidebarCollapsed">文件管理</span>
+      </div>
+
       <div class="nav-item disabled" :title="sidebarCollapsed ? '数据分析（即将上线）' : '即将上线'">
         <el-icon><TrendCharts /></el-icon>
         <span v-show="!sidebarCollapsed">数据分析</span>
@@ -249,6 +259,16 @@
         <ToolCallLogView />
       </div>
 
+      <!-- ─── 文件管理视图 ─── -->
+      <div v-else-if="currentView === 'files'" class="view-tool-log">
+        <div class="notes-topbar">
+          <div class="notes-topbar-left">
+            <span class="notes-topbar-title">文件管理</span>
+          </div>
+        </div>
+        <UserFileView />
+      </div>
+
     </main>
 
     <!-- ═══════════════ AI 总结弹窗 ═══════════════ -->
@@ -319,7 +339,7 @@ import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import {
   EditPen, Notebook, TrendCharts, DataAnalysis, User, UserFilled,
   MoreFilled, SwitchButton, Promotion, Share, CopyDocument, Loading,
-  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close, Tickets
+  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close, Tickets, Folder
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -328,6 +348,7 @@ import request from '@/utils/request'
 import { makeAllDialogsDraggable } from '@/utils/draggable'
 import NotesView from './NotesView.vue'
 import ToolCallLogView from './ToolCallLogView.vue'
+import UserFileView from './UserFileView.vue'
 import LoginModal from '@/components/LoginModal.vue'
 
 const router = useRouter()
