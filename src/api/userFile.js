@@ -47,3 +47,28 @@ export function pageUserFiles(params) {
 export function getUserFileDetail(id) {
   return request.get(`${BASE}/${id}`)
 }
+
+/**
+ * 预览文件原始地址（仅拼路径，不带鉴权；本项目用 token header，直链无法带 token，
+ * 实际预览请用 previewUserFile 取 blob）
+ * @param {number|string} id
+ */
+export function getFilePreviewUrl(id) {
+  return `${BASE}/${id}/preview`
+}
+
+/**
+ * 预览文件（blob，便于携带 token header）
+ * @param {number|string} id
+ */
+export function previewUserFile(id) {
+  return request.get(`${BASE}/${id}/preview`, { responseType: 'blob' })
+}
+
+/**
+ * 下载文件（blob）
+ * @param {number|string} id
+ */
+export function downloadUserFile(id) {
+  return request.get(`${BASE}/${id}/download`, { responseType: 'blob' })
+}

@@ -69,6 +69,7 @@
         size="small"
         class="user-file-table"
         empty-text="暂无文件"
+        @row-dblclick="handlePreview"
       >
         <el-table-column prop="id" label="ID" width="70" align="center" />
         <el-table-column prop="originalName" label="文件名" min-width="200" show-overflow-tooltip />
@@ -88,9 +89,16 @@
         <el-table-column prop="mimeType" label="MIME" min-width="150" show-overflow-tooltip />
         <el-table-column prop="uploadSource" label="来源" width="110" show-overflow-tooltip />
         <el-table-column prop="createTime" label="上传时间" width="170" show-overflow-tooltip />
-        <el-table-column label="操作" width="80" align="center" fixed="right">
+        <el-table-column label="操作" width="130" align="center" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDetail(row.id)">详情</el-button>
+            <el-button
+              link
+              type="primary"
+              size="small"
+              :loading="downloadLoadingId === row.id"
+              @click="handleDownload(row)"
+            >下载</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -181,7 +189,7 @@
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Folder, Close, Loading, RefreshRight, Upload } from '@element-plus/icons-vue'
-import { uploadUserFile, pageUserFiles, getUserFileDetail } from '@/api/userFile'
+import { uploadUserFile, pageUserFiles, getUserFileDetail, previewUserFile, downloadUserFile } from '@/api/userFile'
 import { makeAllDialogsDraggable } from '@/utils/draggable'
 
 const ALLOWED_EXTS = ['pdf', 'doc', 'docx', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp', 'py']
@@ -211,6 +219,115 @@ const uploadLoading = ref(false)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
+
+// ─── 打开 / 下载 ─────────────────────────────────────
+const previewLoadingId = ref(null)
+const downloadLoadingId = ref(null)
+
+const MIME_BY_EXT = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  py: 'text/x-python',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+}
+
+function guessMime(row, headerType) {
+  if (headerType && headerType !== 'application/octet-stream') return headerType
+  if (row?.mimeType) return row.mimeType
+  const ext = (row?.fileExt || '').toLowerCase()
+  return MIME_BY_EXT[ext] || 'application/octet-stream'
+}
+
+function getFileNameFromDisposition(disposition) {
+  if (!disposition) return ''
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition)
+  if (star && star[1]) {
+    try { return decodeURIComponent(star[1].replace(/^["']|["']$/g, '')) } catch { /* noop */ }
+  }
+  const m = /filename=([^;]+)/i.exec(disposition)
+  if (m && m[1]) return m[1].trim().replace(/^["']|["']$/g, '')
+  return ''
+}
+
+function readBlobAsText(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => resolve('')
+    reader.readAsText(blob, 'utf-8')
+  })
+}
+
+// 若后端用 blob 返回 JSON 错误，解析出 message
+async function extractBlobError(blob, fallback) {
+  if (blob && blob.type && blob.type.includes('application/json')) {
+    const text = await readBlobAsText(blob)
+    try {
+      const obj = JSON.parse(text)
+      return obj.msg || obj.message || fallback
+    } catch { /* noop */ }
+  }
+  return fallback
+}
+
+async function handlePreview(row) {
+  if (!row?.id) return
+  previewLoadingId.value = row.id
+  try {
+    const response = await previewUserFile(row.id)
+    const blob = response.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      ElMessage.error(await extractBlobError(blob, '文件打开失败'))
+      return
+    }
+    const headerType = response.headers?.['content-type'] || response.headers?.['Content-Type']
+    const type = guessMime(row, headerType)
+    const url = URL.createObjectURL(new Blob([blob], { type }))
+    const win = window.open(url, '_blank')
+    if (!win) {
+      ElMessage.warning('浏览器阻止了新窗口打开，请允许弹窗后重试。')
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
+  } catch {
+    ElMessage.error('文件打开失败')
+  } finally {
+    previewLoadingId.value = null
+  }
+}
+
+async function handleDownload(row) {
+  if (!row?.id) return
+  downloadLoadingId.value = row.id
+  try {
+    const response = await downloadUserFile(row.id)
+    const blob = response.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      ElMessage.error(await extractBlobError(blob, '文件下载失败'))
+      return
+    }
+    const cd = response.headers?.['content-disposition'] || response.headers?.['Content-Disposition']
+    const filename = getFileNameFromDisposition(cd) || row.originalName || 'download'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success('下载成功')
+  } catch {
+    ElMessage.error('文件下载失败')
+  } finally {
+    downloadLoadingId.value = null
+  }
+}
 
 // ─── 弹窗拖动 ────────────────────────────────────────
 function onDialogOpen() {
@@ -438,6 +555,8 @@ onMounted(fetchList)
   background: #252528 !important;
 }
 :deep(.user-file-table .el-table__empty-text) { color: #4b5263; }
+/* 行可双击打开，整行用箭头光标而非文本输入光标 */
+:deep(.user-file-table .el-table__body tr) { cursor: default; }
 .size { font-family: ui-monospace, monospace; color: #a5b4fc; }
 
 .file-empty {
