@@ -158,7 +158,56 @@
               <div class="prompt-tag">{{ p.tag }}</div>
             </div>
           </div>
+          <!-- 已选附件 -->
+          <div class="attach-chips" v-if="selectedFiles.length">
+            <div
+              v-for="f in selectedFiles"
+              :key="f.id"
+              class="attach-chip"
+              :title="f.originalName"
+            >
+              <el-icon class="chip-icon"><component :is="attachFileIcon(f.fileType)" /></el-icon>
+              <span class="chip-name">{{ f.originalName }}</span>
+              <span class="chip-size">{{ formatFileSize(f.fileSize) }}</span>
+              <el-icon
+                class="chip-del"
+                :class="{ disabled: isLoading || uploading }"
+                @click="removeAttachment(f.id)"
+              ><Close /></el-icon>
+            </div>
+          </div>
           <div class="home-input-wrap">
+            <!-- + 附件按钮 -->
+            <el-popover
+              ref="attachPopoverRef"
+              placement="top-start"
+              :width="200"
+              trigger="click"
+              popper-class="tb-attach-popper"
+            >
+              <template #reference>
+                <button
+                  class="attach-btn"
+                  :class="{ loading: uploading }"
+                  :disabled="isLoading || uploading"
+                  title="添加附件"
+                >
+                  <el-icon v-if="uploading" class="is-loading"><Loading /></el-icon>
+                  <el-icon v-else><Plus /></el-icon>
+                </button>
+              </template>
+              <div class="attach-menu">
+                <div class="attach-menu-item" @click="onClickLocalUpload">
+                  <el-icon><Picture /></el-icon>
+                  <span>添加照片和文件</span>
+                </div>
+                <div class="attach-menu-item" @click="onClickLibrary">
+                  <el-icon><Folder /></el-icon>
+                  <span>从库中添加</span>
+                </div>
+              </div>
+            </el-popover>
+
             <textarea
               ref="homeTextareaRef"
               v-model="userInput"
@@ -168,7 +217,7 @@
               @input="adjustHomeHeight"
               @keydown.enter.exact.prevent="handleSend"
             ></textarea>
-            <button class="home-send-btn" @click="handleSend">
+            <button class="home-send-btn" :disabled="isLoading || uploading" @click="handleSend">
               <el-icon><Promotion /></el-icon>
             </button>
           </div>
@@ -202,13 +251,81 @@
               </div>
             </template>
             <template v-else>
-              <div class="user-bubble">{{ msg.content }}</div>
+              <div class="user-bubble">
+                <div class="user-text" v-if="msg.content">{{ msg.content }}</div>
+                <div class="msg-attachments" v-if="msg.attachments && msg.attachments.length">
+                  <div
+                    v-for="att in msg.attachments"
+                    :key="att.fileId"
+                    class="msg-attach-card"
+                    :title="att.originalName"
+                    @click="previewAttachment(att)"
+                  >
+                    <div class="att-icon"><el-icon><component :is="attachFileIcon(att.fileType)" /></el-icon></div>
+                    <div class="att-meta">
+                      <div class="att-name">{{ att.originalName }}</div>
+                      <div class="att-sub">{{ (att.fileExt || '').toUpperCase() }} · {{ formatFileSize(att.fileSize) }}</div>
+                    </div>
+                    <el-icon class="att-download" title="下载" @click.stop="downloadAttachment(att)"><Download /></el-icon>
+                  </div>
+                </div>
+              </div>
             </template>
           </div>
         </div>
 
         <div class="chat-input-dock">
+          <!-- 已选附件 -->
+          <div class="attach-chips" v-if="selectedFiles.length">
+            <div
+              v-for="f in selectedFiles"
+              :key="f.id"
+              class="attach-chip"
+              :title="f.originalName"
+            >
+              <el-icon class="chip-icon"><component :is="attachFileIcon(f.fileType)" /></el-icon>
+              <span class="chip-name">{{ f.originalName }}</span>
+              <span class="chip-size">{{ formatFileSize(f.fileSize) }}</span>
+              <el-icon
+                class="chip-del"
+                :class="{ disabled: isLoading || uploading }"
+                @click="removeAttachment(f.id)"
+              ><Close /></el-icon>
+            </div>
+          </div>
+
           <div class="chat-input-wrap">
+            <!-- + 附件按钮 -->
+            <el-popover
+              ref="attachPopoverRef"
+              placement="top-start"
+              :width="200"
+              trigger="click"
+              popper-class="tb-attach-popper"
+            >
+              <template #reference>
+                <button
+                  class="attach-btn"
+                  :class="{ loading: uploading }"
+                  :disabled="isLoading || uploading"
+                  title="添加附件"
+                >
+                  <el-icon v-if="uploading" class="is-loading"><Loading /></el-icon>
+                  <el-icon v-else><Plus /></el-icon>
+                </button>
+              </template>
+              <div class="attach-menu">
+                <div class="attach-menu-item" @click="onClickLocalUpload">
+                  <el-icon><Picture /></el-icon>
+                  <span>添加照片和文件</span>
+                </div>
+                <div class="attach-menu-item" @click="onClickLibrary">
+                  <el-icon><Folder /></el-icon>
+                  <span>从库中添加</span>
+                </div>
+              </div>
+            </el-popover>
+
             <textarea
               ref="chatTextareaRef"
               v-model="userInput"
@@ -218,7 +335,7 @@
               @input="adjustChatHeight"
               @keydown.enter.exact.prevent="handleSend"
             ></textarea>
-            <button class="chat-send-btn" :disabled="isLoading" @click="handleSend">
+            <button class="chat-send-btn" :disabled="isLoading || uploading" @click="handleSend">
               <el-icon><Promotion /></el-icon>
             </button>
           </div>
@@ -270,6 +387,16 @@
       </div>
 
     </main>
+
+    <!-- 隐藏的本地文件选择 input（home / chat 共用） -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      :accept="CHAT_ACCEPT"
+      style="display: none"
+      @change="handleLocalFiles"
+    />
 
     <!-- ═══════════════ AI 总结弹窗 ═══════════════ -->
     <el-dialog
@@ -328,6 +455,82 @@
       </template>
     </el-dialog>
 
+    <!-- ═══════════════ 从文件库中添加 ═══════════════ -->
+    <el-dialog
+      v-model="libVisible"
+      title="从文件库中添加"
+      width="760px"
+      :append-to-body="true"
+      class="tb-lib-dialog"
+      @opened="onDialogOpen"
+    >
+      <div class="lib-filter">
+        <el-input
+          v-model="libFilters.keyword"
+          placeholder="文件名关键字"
+          clearable
+          class="lib-keyword"
+          @keyup.enter="libSearch"
+        />
+        <el-select v-model="libFilters.fileType" placeholder="类型" clearable class="lib-select">
+          <el-option label="全部" value="" />
+          <el-option label="文档" value="DOCUMENT" />
+          <el-option label="图片" value="IMAGE" />
+          <el-option label="其它" value="OTHER" />
+        </el-select>
+        <el-select v-model="libFilters.fileExt" placeholder="扩展名" clearable class="lib-select">
+          <el-option label="全部" value="" />
+          <el-option v-for="ext in LIB_EXT_OPTIONS" :key="ext" :label="ext" :value="ext" />
+        </el-select>
+        <el-button type="primary" :loading="libLoading" @click="libSearch">查询</el-button>
+        <el-button @click="libReset">重置</el-button>
+      </div>
+
+      <el-table
+        ref="libTableRef"
+        v-loading="libLoading"
+        :data="libList"
+        size="small"
+        height="360"
+        class="lib-table"
+        empty-text="暂无文件"
+        @selection-change="onLibSelectionChange"
+      >
+        <el-table-column type="selection" width="44" />
+        <el-table-column prop="originalName" label="文件名" min-width="200" show-overflow-tooltip />
+        <el-table-column label="类型" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.fileType === 'IMAGE' ? 'success' : (row.fileType === 'DOCUMENT' ? 'primary' : 'info')" size="small" effect="dark">
+              {{ row.fileType === 'IMAGE' ? '图片' : (row.fileType === 'DOCUMENT' ? '文档' : '其它') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="fileExt" label="扩展名" width="80" align="center" />
+        <el-table-column label="大小" width="100" align="right">
+          <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="上传时间" width="160" show-overflow-tooltip />
+      </el-table>
+
+      <div class="lib-pagination" v-if="libTotal > 0">
+        <el-pagination
+          background
+          layout="total, prev, pager, next"
+          :current-page="libPageNum"
+          :page-size="libPageSize"
+          :total="libTotal"
+          @current-change="onLibPageChange"
+        />
+      </div>
+
+      <template #footer>
+        <el-button @click="libVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmLibrary">
+          添加<span v-if="libSelection.length"> ({{ libSelection.length }})</span>
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- ═══════════════ 登录弹窗 ═══════════════ -->
     <LoginModal v-model:visible="loginModalVisible" @success="onLoginSuccess" />
 
@@ -335,16 +538,18 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import {
   EditPen, Notebook, TrendCharts, DataAnalysis, User, UserFilled,
   MoreFilled, SwitchButton, Promotion, Share, CopyDocument, Loading,
-  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close, Tickets, Folder
+  Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close, Tickets, Folder,
+  Plus, Picture, Document, Download
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import request from '@/utils/request'
+import { uploadUserFile, pageUserFiles, previewUserFile, downloadUserFile } from '@/api/userFile'
 import { makeAllDialogsDraggable } from '@/utils/draggable'
 import NotesView from './NotesView.vue'
 import ToolCallLogView from './ToolCallLogView.vue'
@@ -641,7 +846,11 @@ async function loadConversation(id) {
     if (res.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
       messages.value = [
         { ...WELCOME_MSG },
-        ...res.data.map(m => ({ role: m.role === 'assistant' ? 'ai' : 'user', content: m.content }))
+        ...res.data.map(m => ({
+          role: m.role === 'assistant' ? 'ai' : 'user',
+          content: m.content,
+          attachments: Array.isArray(m.attachments) ? m.attachments : []
+        }))
       ]
     } else {
       messages.value = [{ ...WELCOME_MSG }]
@@ -681,10 +890,250 @@ async function deleteConversation(id) {
   }
 }
 
+// ─── 聊天附件 ──────────────────────────────────────────
+const CHAT_ALLOWED_EXTS = [
+  'pdf', 'doc', 'docx', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp', 'py',
+  'java', 'vue', 'sql', 'js', 'ts', 'json', 'xml', 'html', 'css', 'yml', 'yaml', 'properties'
+]
+const CHAT_ACCEPT = '.' + CHAT_ALLOWED_EXTS.join(',.')
+const CHAT_MAX_SIZE = 20 * 1024 * 1024
+const MAX_ATTACH = 5
+
+const selectedFiles = ref([])        // 已选附件（UserFileVO[]）
+const uploading = ref(false)         // 本地上传中
+const fileInputRef = ref(null)       // 隐藏 input[type=file]
+const attachPopoverRef = ref(null)   // + 菜单 popover
+
+function attachFileIcon(t) {
+  if (t === 'IMAGE') return Picture
+  return Document
+}
+function formatFileSize(bytes) {
+  if (bytes == null || isNaN(bytes)) return '-'
+  const b = Number(bytes)
+  if (b < 1024) return b + ' B'
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
+  return (b / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+// 将文件加入已选列表：去重 + 数量上限
+function addAttachments(files) {
+  for (const f of files) {
+    if (!f || f.id == null) continue
+    if (selectedFiles.value.some(s => s.id === f.id)) continue
+    if (selectedFiles.value.length >= MAX_ATTACH) {
+      ElMessage.warning('一次最多添加 5 个文件')
+      return
+    }
+    selectedFiles.value.push(f)
+  }
+}
+
+function removeAttachment(id) {
+  if (isLoading.value || uploading.value) return
+  selectedFiles.value = selectedFiles.value.filter(f => f.id !== id)
+}
+
+// ─── 气泡内附件 预览 / 下载 ────────────────────────────
+const MIME_BY_EXT = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  webp: 'image/webp', txt: 'text/plain', md: 'text/markdown', py: 'text/x-python',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+}
+function guessAttachMime(att, headerType) {
+  if (headerType && headerType !== 'application/octet-stream') return headerType
+  if (att?.mimeType) return att.mimeType
+  return MIME_BY_EXT[(att?.fileExt || '').toLowerCase()] || 'application/octet-stream'
+}
+function filenameFromDisposition(disposition) {
+  if (!disposition) return ''
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition)
+  if (star && star[1]) {
+    try { return decodeURIComponent(star[1].replace(/^["']|["']$/g, '')) } catch { /* noop */ }
+  }
+  const m = /filename=([^;]+)/i.exec(disposition)
+  return m && m[1] ? m[1].trim().replace(/^["']|["']$/g, '') : ''
+}
+
+async function previewAttachment(att) {
+  if (!att?.fileId) return
+  try {
+    const response = await previewUserFile(att.fileId)
+    const blob = response.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      ElMessage.error('文件打开失败')
+      return
+    }
+    const headerType = response.headers?.['content-type'] || response.headers?.['Content-Type']
+    const url = URL.createObjectURL(new Blob([blob], { type: guessAttachMime(att, headerType) }))
+    const win = window.open(url, '_blank')
+    if (!win) ElMessage.warning('浏览器阻止了新窗口打开，请允许弹窗后重试。')
+    setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
+  } catch {
+    ElMessage.error('文件打开失败')
+  }
+}
+
+async function downloadAttachment(att) {
+  if (!att?.fileId) return
+  try {
+    const response = await downloadUserFile(att.fileId)
+    const blob = response.data
+    if (blob && blob.type && blob.type.includes('application/json')) {
+      ElMessage.error('文件下载失败')
+      return
+    }
+    const cd = response.headers?.['content-disposition'] || response.headers?.['Content-Disposition']
+    const filename = filenameFromDisposition(cd) || att.originalName || 'download'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success('下载成功')
+  } catch {
+    ElMessage.error('文件下载失败')
+  }
+}
+
+// 菜单项：添加照片和文件
+function onClickLocalUpload() {
+  attachPopoverRef.value?.hide()
+  if (isLoading.value || uploading.value) return
+  fileInputRef.value?.click()
+}
+
+function validateLocalFile(file) {
+  const name = file.name || ''
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
+  if (!CHAT_ALLOWED_EXTS.includes(ext)) {
+    ElMessage.error('不支持该文件类型')
+    return false
+  }
+  if (file.size > CHAT_MAX_SIZE) {
+    ElMessage.error('文件大小不能超过 20MB')
+    return false
+  }
+  return true
+}
+
+async function handleLocalFiles(e) {
+  const fileList = Array.from(e.target.files || [])
+  // 允许再次选择同一文件
+  e.target.value = ''
+  if (!fileList.length) return
+
+  uploading.value = true
+  for (const raw of fileList) {
+    if (selectedFiles.value.length >= MAX_ATTACH) {
+      ElMessage.warning('一次最多添加 5 个文件')
+      break
+    }
+    if (!validateLocalFile(raw)) continue
+    try {
+      const res = await uploadUserFile(raw)
+      if (res.code === 200 || res.code === 1) {
+        addAttachments([res.data])
+      } else {
+        ElMessage.error(`${raw.name}：${res.msg || res.message || '上传失败'}`)
+      }
+    } catch {
+      ElMessage.error(`${raw.name}：上传失败`)
+    }
+  }
+  uploading.value = false
+}
+
+// 菜单项：从库中添加
+const libVisible = ref(false)
+const libLoading = ref(false)
+const libList = ref([])
+const libTotal = ref(0)
+const libPageNum = ref(1)
+const libPageSize = ref(10)
+const libFilters = reactive({ keyword: '', fileType: '', fileExt: '' })
+const libTableRef = ref(null)
+const libSelection = ref([])
+const LIB_EXT_OPTIONS = CHAT_ALLOWED_EXTS
+
+function onClickLibrary() {
+  attachPopoverRef.value?.hide()
+  if (isLoading.value || uploading.value) return
+  if (!localStorage.getItem('token')) {
+    loginModalVisible.value = true
+    return
+  }
+  libVisible.value = true
+  libPageNum.value = 1
+  fetchLibrary()
+}
+
+async function fetchLibrary() {
+  libLoading.value = true
+  try {
+    const res = await pageUserFiles({
+      pageNum: libPageNum.value,
+      pageSize: libPageSize.value,
+      keyword: libFilters.keyword || undefined,
+      fileType: libFilters.fileType || undefined,
+      fileExt: libFilters.fileExt || undefined
+    })
+    if (res.code === 200 || res.code === 1) {
+      const data = res.data || {}
+      libList.value = data.records || data.list || data.rows || []
+      libTotal.value = data.total || 0
+    } else {
+      ElMessage.error(res.msg || res.message || '查询失败')
+    }
+  } catch {
+    /* 全局拦截器已提示 */
+  } finally {
+    libLoading.value = false
+  }
+}
+
+function libSearch() {
+  libPageNum.value = 1
+  fetchLibrary()
+}
+function libReset() {
+  libFilters.keyword = ''
+  libFilters.fileType = ''
+  libFilters.fileExt = ''
+  libPageNum.value = 1
+  fetchLibrary()
+}
+function onLibSelectionChange(rows) {
+  libSelection.value = rows
+}
+function onLibPageChange(p) {
+  libPageNum.value = p
+  fetchLibrary()
+}
+function confirmLibrary() {
+  if (!libSelection.value.length) {
+    ElMessage.warning('请先勾选文件')
+    return
+  }
+  addAttachments(libSelection.value)
+  libVisible.value = false
+}
+
 // ─── 发送消息 ──────────────────────────────────────────
 async function handleSend() {
+  if (isLoading.value || uploading.value) return
+
+  // text 同时用于气泡 content 和请求体 msg：
+  // 只发文件时保持为空字符串，不再补“请读取这些文件”默认文案。
   const text = userInput.value.trim()
-  if (!text || isLoading.value) return
+  if (!text && selectedFiles.value.length === 0) {
+    ElMessage.warning('请输入内容或添加文件')
+    return
+  }
 
   if (!localStorage.getItem('token')) {
     loginModalVisible.value = true
@@ -698,7 +1147,18 @@ async function handleSend() {
     await nextTick()
   }
 
-  messages.value.push({ role: 'user', content: text })
+  // 先拷贝一份附件快照（用 fileId 命名，与历史消息字段保持一致），
+  // 之后清空 selectedFiles 不会影响已 push 的气泡附件
+  const attachmentsToSend = selectedFiles.value.map(f => ({
+    fileId: f.id,
+    originalName: f.originalName,
+    fileExt: f.fileExt,
+    fileType: f.fileType,
+    mimeType: f.mimeType,
+    fileSize: f.fileSize
+  }))
+
+  messages.value.push({ role: 'user', content: text, attachments: attachmentsToSend })
   userInput.value = ''
   resetTextareaHeight()
 
@@ -717,6 +1177,9 @@ async function handleSend() {
   const aiMsg = messages.value[messages.value.length - 1]
   await scrollToBottom()
 
+  const fileIds = selectedFiles.value.map(f => f.id)
+  if (fileIds.length) console.log('send message with fileIds:', fileIds)
+
   try {
     const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat/message`, {
       method: 'POST',
@@ -724,7 +1187,7 @@ async function handleSend() {
         'Content-Type': 'application/json',
         'token': localStorage.getItem('token') || ''
       },
-      body: JSON.stringify({ conversationId: currentConversationId.value, msg: text })
+      body: JSON.stringify({ conversationId: currentConversationId.value, msg: text, fileIds })
     })
 
     if (!response.ok || !response.body) {
@@ -732,8 +1195,11 @@ async function handleSend() {
       isLoading.value = false
       clearPendingSummary()
       await scrollToBottom()
-      return
+      return  // 发送失败：保留 selectedFiles，方便重试
     }
+
+    // 请求已被后端接受（chat_message_file 已写入）→ 清空已选附件
+    selectedFiles.value = []
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
@@ -1420,9 +1886,65 @@ onUnmounted(() => {
   color: #e2e4e9;
   line-height: 1.6;
   max-width: 72%;
+}
+.user-bubble .user-text {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ── 气泡内附件卡片 ──────────────────────────────── */
+.msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.user-bubble .user-text + .msg-attachments { margin-top: 8px; }
+.msg-attach-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 200px;
+  max-width: 100%;
+  background: #1e1e22;
+  border: 0.5px solid #2e2e32;
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.msg-attach-card:hover { background: #222226; border-color: #6366f1; }
+.msg-attach-card .att-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: rgba(99, 102, 241, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a5b4fc;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.msg-attach-card .att-meta { flex: 1; min-width: 0; }
+.msg-attach-card .att-name {
+  font-size: 12.5px;
+  color: #e2e4e9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.msg-attach-card .att-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+.msg-attach-card .att-download {
+  font-size: 15px;
+  color: #6b7280;
+  flex-shrink: 0;
+  border-radius: 5px;
+  padding: 2px;
+  transition: color 0.15s, background 0.15s;
+}
+.msg-attach-card .att-download:hover { color: #a5b4fc; background: #2e2e32; }
 
 /* ── CHAT 输入区 ─────────────────────────────────── */
 .chat-input-dock {
@@ -1475,6 +1997,65 @@ onUnmounted(() => {
 }
 .chat-send-btn:hover:not(:disabled) { opacity: 0.85; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── + 附件按钮 ──────────────────────────────────── */
+.attach-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 0.5px solid #2e2e32;
+  border-radius: 8px;
+  color: #9ca3af;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.attach-btn:hover:not(:disabled) { background: #2e2e32; color: #e2e4e9; border-color: #3a3d4a; }
+.attach-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── 已选附件 chips ──────────────────────────────── */
+.attach-chips {
+  max-width: 820px;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.attach-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  background: #252528;
+  border: 0.5px solid #2e2e32;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #c9ccd6;
+}
+.attach-chip .chip-icon { font-size: 14px; color: #818cf8; flex-shrink: 0; }
+.attach-chip .chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.attach-chip .chip-size { color: #4b5263; flex-shrink: 0; font-size: 11px; }
+.attach-chip .chip-del {
+  font-size: 13px;
+  color: #6b7280;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.attach-chip .chip-del:hover { color: #f56c6c; }
+.attach-chip .chip-del.disabled { color: #3a3d4a; cursor: not-allowed; }
 
 .chat-footer-tip {
   text-align: center;
@@ -1573,5 +2154,112 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.8;
   color: #c9ccd6;
+}
+</style>
+
+<!-- 不带 scoped：+ 菜单 popover 与文件库弹窗渲染到 body -->
+<style>
+/* ── + 附件菜单 ──────────────────────────────────── */
+.tb-attach-popper.el-popover.el-popper {
+  background: #1e1e22 !important;
+  border: 0.5px solid #2e2e32 !important;
+  padding: 6px !important;
+  min-width: 0 !important;
+}
+.tb-attach-popper .el-popper__arrow::before {
+  background: #1e1e22 !important;
+  border-color: #2e2e32 !important;
+}
+.tb-attach-popper .attach-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: #c9ccd6;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tb-attach-popper .attach-menu-item:hover { background: #252528; }
+.tb-attach-popper .attach-menu-item .el-icon { font-size: 16px; color: #818cf8; }
+
+/* ── 文件库弹窗 ──────────────────────────────────── */
+.tb-lib-dialog.el-dialog {
+  background: #1a1a1c !important;
+  border: 0.5px solid #2e2e32 !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+}
+.tb-lib-dialog .el-dialog__header {
+  background: #1e1e22 !important;
+  border-bottom: 0.5px solid #2e2e32;
+  padding: 14px 18px !important;
+  margin: 0 !important;
+}
+.tb-lib-dialog .el-dialog__title { color: #e2e4e9 !important; font-size: 15px; font-weight: 600; }
+.tb-lib-dialog .el-dialog__headerbtn .el-dialog__close { color: #6b7280; }
+.tb-lib-dialog .el-dialog__body { background: #1a1a1c !important; padding: 16px 18px 6px !important; }
+.tb-lib-dialog .el-dialog__footer {
+  background: #1a1a1c !important;
+  border-top: 0.5px solid #2e2e32;
+  padding: 12px 18px !important;
+}
+.tb-lib-dialog .lib-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.tb-lib-dialog .lib-keyword { width: 200px; }
+.tb-lib-dialog .lib-select { width: 130px; }
+.tb-lib-dialog .lib-filter .el-input__wrapper,
+.tb-lib-dialog .lib-filter .el-select__wrapper {
+  background: #252528 !important;
+  box-shadow: 0 0 0 1px #2e2e32 inset !important;
+}
+.tb-lib-dialog .lib-filter .el-input__inner,
+.tb-lib-dialog .lib-filter .el-select__placeholder { color: #e2e4e9 !important; }
+
+.tb-lib-dialog .lib-table {
+  --el-table-bg-color: #1a1a1c;
+  --el-table-tr-bg-color: #1a1a1c;
+  --el-table-header-bg-color: #252528;
+  --el-table-row-hover-bg-color: #252528;
+  --el-table-border-color: #2e2e32;
+  --el-table-text-color: #c9ccd6;
+  --el-table-header-text-color: #9ca3af;
+  background: transparent !important;
+  border-radius: 8px;
+}
+.tb-lib-dialog .lib-table th.el-table__cell { background: #252528 !important; font-size: 12px; font-weight: 500; }
+.tb-lib-dialog .lib-table td.el-table__cell { background: transparent !important; font-size: 12.5px; border-bottom: 0.5px solid #2e2e32 !important; }
+.tb-lib-dialog .lib-table tr:hover > td.el-table__cell { background: #252528 !important; }
+.tb-lib-dialog .lib-table .el-table__empty-text { color: #4b5263; }
+
+.tb-lib-dialog .lib-pagination { display: flex; justify-content: flex-end; padding: 12px 0 2px; }
+.tb-lib-dialog .lib-pagination .el-pagination.is-background .btn-next,
+.tb-lib-dialog .lib-pagination .el-pagination.is-background .btn-prev,
+.tb-lib-dialog .lib-pagination .el-pagination.is-background .el-pager li {
+  background-color: #1e1e22;
+  color: #6b7280;
+  border: 0.5px solid #2e2e32;
+}
+.tb-lib-dialog .lib-pagination .el-pagination.is-background .el-pager li.is-active {
+  background-color: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+.tb-lib-dialog .lib-pagination .el-pagination__total { color: #9ca3af !important; }
+.tb-lib-dialog .el-dialog__footer .el-button {
+  background: #252528 !important;
+  border-color: #2e2e32 !important;
+  color: #e2e4e9 !important;
+}
+.tb-lib-dialog .el-dialog__footer .el-button--primary {
+  background: #6366f1 !important;
+  border-color: #6366f1 !important;
+  color: #fff !important;
 }
 </style>
