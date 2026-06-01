@@ -234,7 +234,7 @@
           </div>
         </div>
 
-        <div class="chat-body" ref="chatBodyRef">
+        <div class="chat-body" ref="chatBodyRef" @scroll="onChatScroll">
           <div v-for="(msg, idx) in messages" :key="idx" class="msg-row" :class="msg.role">
             <template v-if="msg.role === 'ai'">
               <div class="ai-avatar">TB</div>
@@ -273,6 +273,18 @@
             </template>
           </div>
         </div>
+
+        <!-- 一键滚动到底部 -->
+        <transition name="scroll-fade">
+          <button
+            v-show="showScrollDown"
+            class="scroll-down-btn"
+            title="滚动到底部"
+            @click="scrollToBottom(true)"
+          >
+            <el-icon><ArrowDown /></el-icon>
+          </button>
+        </transition>
 
         <div class="chat-input-dock">
           <!-- 已选附件 -->
@@ -543,7 +555,7 @@ import {
   EditPen, Notebook, TrendCharts, DataAnalysis, User, UserFilled,
   MoreFilled, SwitchButton, Promotion, Share, CopyDocument, Loading,
   Expand, Fold, RefreshRight, MagicStick, DocumentAdd, Close, Tickets, Folder,
-  Plus, Picture, Document, Download
+  Plus, Picture, Document, Download, ArrowDown
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -586,6 +598,7 @@ const messages = ref([])
 const userInput = ref('')
 const isLoading = ref(false)
 const chatBodyRef = ref(null)
+const showScrollDown = ref(false)
 const chatTextareaRef = ref(null)
 const homeTextareaRef = ref(null)
 
@@ -1259,9 +1272,24 @@ function parseMarkdown(text) {
   return marked(text)
 }
 
-async function scrollToBottom() {
+async function scrollToBottom(smooth = false) {
   await nextTick()
-  if (chatBodyRef.value) chatBodyRef.value.scrollTop = chatBodyRef.value.scrollHeight
+  const el = chatBodyRef.value
+  if (!el) return
+  if (smooth) {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  } else {
+    el.scrollTop = el.scrollHeight
+  }
+  showScrollDown.value = false
+}
+
+function onChatScroll() {
+  const el = chatBodyRef.value
+  if (!el) return
+  // 距离底部超过一定阈值时显示"回到底部"按钮
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  showScrollDown.value = distance > 160
 }
 
 function adjustChatHeight() {
@@ -1808,6 +1836,43 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* 一键滚动到底部按钮 */
+.scroll-down-btn {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 96px;
+  z-index: 5;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0.5px solid #34343a;
+  background: #252528;
+  color: #c7cad1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+}
+.scroll-down-btn:hover {
+  background: #303035;
+  color: #fff;
+  transform: translateX(-50%) translateY(2px);
+}
+.scroll-fade-enter-active,
+.scroll-fade-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+.scroll-fade-enter-from,
+.scroll-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
 }
 
 .chat-header {
@@ -1833,8 +1898,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 20px;
 }
-.chat-body::-webkit-scrollbar { width: 4px; }
-.chat-body::-webkit-scrollbar-thumb { background: #2e2e32; border-radius: 4px; }
+.chat-body::-webkit-scrollbar { width: 10px; }
+.chat-body::-webkit-scrollbar-track { background: transparent; }
+.chat-body::-webkit-scrollbar-thumb {
+  background: #4a4a52;
+  border-radius: 6px;
+  border: 2px solid #111113;
+}
+.chat-body::-webkit-scrollbar-thumb:hover { background: #5e5e68; }
 
 .msg-row { display: flex; width: 100%; max-width: 820px; }
 .msg-row.user { justify-content: flex-end; }
